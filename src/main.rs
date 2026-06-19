@@ -191,7 +191,7 @@ struct State {
     avg_starvation_rate: f64, // running average % starved per year
     year: u32,                // year counter
     population: u32,
-    store: u32,          // bushels in store
+    grain: u32,          // bushels in store
     rats_ate: u32,       // rats ate  (H-S = 3000-2800)
     yield_per_acre: u32, // bushels harvested per acre
     acres: u32,          // acres owned  (H/Y = 3000/3)
@@ -207,7 +207,7 @@ impl State {
             avg_starvation_rate: 0.0,
             year: 0,
             population: 95,
-            store: 2800,
+            grain: 2800,
             rats_ate: 200,
             yield_per_acre: 3,
             acres: 1000,
@@ -219,12 +219,12 @@ impl State {
 
     fn buy_land(&mut self, acres: u32, price: u32) {
         self.acres += acres;
-        self.store -= acres * price;
+        self.grain-= acres * price;
     }
 
     fn sell_land(&mut self, acres: u32, price: u32) {
         self.acres -= acres;
-        self.store += acres * price;
+        self.grain+= acres * price;
     }
 }
 
@@ -269,7 +269,7 @@ fn main() {
         println!("THE CITY NOW OWNS  {} ACRES.", state.acres);
         println!("YOU HARVESTED {} BUSHELS PER ACRE.", state.yield_per_acre);
         println!("THE RATS ATE {} BUSHELS.", state.rats_ate);
-        println!("YOU NOW HAVE {} BUSHELS IN STORE.", state.store);
+        println!("YOU NOW HAVE {} BUSHELS IN STORE.", state.grain);
         println!();
 
         // End of 10-year term (line 270)
@@ -288,11 +288,11 @@ fn main() {
                 player_quit();
             }
             let n = n as u32;
-            if price * n <= state.store {
+            if price * n <= state.grain{
                 state.buy_land(n, price);
                 break n;
             }
-            not_enough_grain(state.store);
+            not_enough_grain(state.grain);
         };
 
         // ── Sell acres (lines 340-350) — only if nothing bought ──────────────
@@ -319,12 +319,12 @@ fn main() {
                 player_quit();
             }
             let n = n as u32;
-            if n <= state.store {
+            if n <= state.grain{
                 break n;
             }
-            not_enough_grain(state.store);
+            not_enough_grain(state.grain);
         };
-        state.store -= food;
+        state.grain-= food;
         println!();
 
         // ── Plant seed (lines 440-510) ────────────────────────────────────────
@@ -341,8 +341,8 @@ fn main() {
                 not_enough_acres(state.acres);
                 continue;
             }
-            if n / 2 > state.store {
-                not_enough_grain(state.store);
+            if n / 2 > state.grain {
+                not_enough_grain(state.grain);
                 continue;
             }
             if n > ACRES_PER_PERSON * state.population {
@@ -356,8 +356,9 @@ fn main() {
         };
 
         // plant 2 acres with one bushel... original used integer division,
-        let seed_cost = planted.div_ceil(2);
-        state.store -= seed_cost;
+        //let seed_cost = planted.div_ceil(2);
+        let seed_cost = planted / 2;
+        state.grain-= seed_cost;
 
         // ── Harvest (lines 511-530) ───────────────────────────────────────────
         state.yield_per_acre = rnd.random_range(1..=5);
@@ -367,15 +368,15 @@ fn main() {
         let c2 = rnd.random_range(1..=5);
         if c2 % 2 == 0 {
             // even → rats
-            state.rats_ate = state.store / c2;
+            state.rats_ate = state.grain / c2;
         }
-        state.store += harvest - state.rats_ate;
+        state.grain += harvest - state.rats_ate;
 
         // ── Immigration (line 533) ────────────────────────────────────────────
         //let c3 = rnd.random_range(1..=5); // chaos factor
         // immigrants proportional to attractiveness of city
         // Uses c2, the same roll as the rat check above - not a fresh draw
-        state.immigrants = (c2 as f64 * (BUSHELS_PER_PERSON * state.acres + state.store) as f64
+        state.immigrants = (c2 as f64 * (BUSHELS_PER_PERSON * state.acres + state.grain) as f64
             / state.population as f64
             / 100.0
             + 1.0)
