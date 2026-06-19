@@ -1,6 +1,8 @@
 use std::io::{self, Write};
+use rand::RngExt;
 
 const MAX_YEARS: i64 = 10;
+const ACRES_PER_PERSON: i64 = 10;
 const BUSHELS_PER_PERSON: i64 = 20;
 
 // ── I/O helpers ──────────────────────────────────────────────────────────────
@@ -89,6 +91,8 @@ fn main() {
     let mut plague: bool = false;
     let mut starved: i64 = 0; // people who starved last year (shown in report)
 
+    let mut rnd = rand::rng();
+
     // ── Year loop ────────────────────────────────────────────────────────────
     loop {
         // ── Annual report (lines 215-260) ────────────────────────────────────
@@ -118,7 +122,7 @@ fn main() {
         }
 
         // ── Land price (lines 310-312) ────────────────────────────────────────
-        yield_per_acre = rand::random_range(17..=26);
+        yield_per_acre = rnd.random_range(17..=26);
         println!("LAND IS TRADING AT {} BUSHELS PER ACRE.", yield_per_acre);
 
         // ── Buy acres (lines 320-334) ─────────────────────────────────────────
@@ -140,7 +144,7 @@ fn main() {
                 if n < 0 {
                     return player_quit();
                 }
-                if n < acres {
+                if n <= acres {
                     break n;
                 }
                 not_enough_acres(acres);
@@ -184,7 +188,7 @@ fn main() {
                 not_enough_grain(store);
                 continue;
             }
-            if n >= 10 * population {
+            if n > ACRES_PER_PERSON * population {
                 println!(
                     "BUT YOU HAVE ONLY {} PEOPLE TO TEND THE FIELDS!  NOW THEN,",
                     population
@@ -197,29 +201,30 @@ fn main() {
         store -= planted / 2; // seed cost
 
         // ── Harvest (lines 511-530) ───────────────────────────────────────────
-        yield_per_acre = rand::random_range(1..=5);
+        yield_per_acre = rnd.random_range(1..=5);
         let harvest = planted * yield_per_acre;
         rats_ate = 0;
 
-        let rat_roll = rand::random_range(1..=5);
-        if rat_roll % 2 == 0 {
+        let c2 = rnd.random_range(1..=5);
+        if c2 % 2 == 0 {
             // even → rats
-            rats_ate = store / rat_roll;
+            rats_ate = store / c2;
         }
         store += harvest - rats_ate;
 
         // ── Immigration (line 533) ────────────────────────────────────────────
-        let c3 = rand::random_range(1..=5); // chaos factor
+        //let c3 = rnd.random_range(1..=5); // chaos factor
         // immigrants proportional to attractiveness of city
+        // Uses c2, the same roll as the rat check above - not a fresh draw
         immigrants =
-            (c3 as f64 * (BUSHELS_PER_PERSON * acres + store) as f64 / population as f64 / 100.0
+            (c2 as f64 * (BUSHELS_PER_PERSON * acres + store) as f64 / population as f64 / 100.0
                 + 1.0)
                 .floor() as i64;
 
         // ── Starvation (lines 540-555) ────────────────────────────────────────
         let fed_count = food / BUSHELS_PER_PERSON;
 
-        plague = rand::random_bool(0.15);
+        plague = rnd.random_bool(0.15);
 
         if population < fed_count {
             // Everyone fed; no starvation
@@ -261,7 +266,7 @@ fn main() {
         // Mediocre outcome (lines 895-896 → 960)
         let max = (0.8 * population as f64) as i64;
         let assassins = if max > 0 {
-            rand::random_range(0..max)
+            rnd.random_range(0..max)
         } else {
             0
         };
