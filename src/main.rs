@@ -1,5 +1,7 @@
 use std::io::{self, Write};
-//use rand::RngExt;
+
+const MAX_YEARS: i64 = 10;
+const BUSHELS_PER_PERSON: i64 = 20;
 
 // ── I/O helpers ──────────────────────────────────────────────────────────────
 
@@ -51,8 +53,6 @@ fn impeach(d: i64, per_year: bool) {
     println!("DUE TO THIS EXTREME MISMANAGEMENT YOU HAVE NOT ONLY");
     println!("BEEN IMPEACHED AND THROWN OUT OF OFFICE BUT YOU HAVE");
     println!("ALSO BEEN DECLARED NATIONAL FINK!!!!");
-    farewell();
-    std::process::exit(0);
 }
 
 /// Quit at the player's own request (line 850).
@@ -61,7 +61,6 @@ fn player_quit() {
     println!("HAMURABI:  I CANNOT DO WHAT YOU WISH.");
     println!("GET YOURSELF ANOTHER STEWARD!!!!!");
     farewell();
-    std::process::exit(0);
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -114,7 +113,7 @@ fn main() {
         println!();
 
         // End of 10-year term (line 270)
-        if year == 11 {
+        if year > MAX_YEARS {
             break;
         }
 
@@ -126,7 +125,7 @@ fn main() {
         let buy: i64 = loop {
             let n = read_int("HOW MANY ACRES DO YOU WISH TO BUY? ");
             if n < 0 {
-                player_quit();
+                return player_quit();
             }
             if yield_per_acre * n <= store {
                 break n;
@@ -139,7 +138,7 @@ fn main() {
             loop {
                 let n = read_int("HOW MANY ACRES DO YOU WISH TO SELL? ");
                 if n < 0 {
-                    player_quit();
+                    return player_quit();
                 }
                 if n < acres {
                     break n;
@@ -158,7 +157,7 @@ fn main() {
         let food: i64 = loop {
             let n = read_int("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ");
             if n < 0 {
-                player_quit();
+                return player_quit();
             }
             if n <= store {
                 break n;
@@ -175,7 +174,7 @@ fn main() {
                 break 0;
             }
             if n < 0 {
-                player_quit();
+                return player_quit();
             }
             if n > acres {
                 not_enough_acres(acres);
@@ -210,12 +209,15 @@ fn main() {
         store += harvest - rats_ate;
 
         // ── Immigration (line 533) ────────────────────────────────────────────
-        let c3 = rand::random_range(1..=5);
-        immigrants = (c3 as f64 * (20 * acres + store) as f64 / population as f64 / 100.0 + 1.0)
-            .floor() as i64;
+        let c3 = rand::random_range(1..=5); // chaos factor
+        // immigrants proportional to attractiveness of city
+        immigrants =
+            (c3 as f64 * (BUSHELS_PER_PERSON * acres + store) as f64 / population as f64 / 100.0
+                + 1.0)
+                .floor() as i64;
 
         // ── Starvation (lines 540-555) ────────────────────────────────────────
-        let fed_count = food / 20; // each 20 bushels feeds one person
+        let fed_count = food / BUSHELS_PER_PERSON;
 
         plague = rand::random_bool(0.15);
 
@@ -226,6 +228,8 @@ fn main() {
             starved = population - fed_count;
             if starved as f64 > 0.45 * population as f64 {
                 impeach(starved, true);
+                farewell();
+                return;
             }
             // Running average of % starved
             avg_starvation_rate = ((year - 1) as f64 * avg_starvation_rate
@@ -237,7 +241,7 @@ fn main() {
     }
 
     // ── End-of-term evaluation (lines 860-975) ─────────────────────────────
-    println!("IN YOUR 10-YEAR TERM OF OFFICE, {avg_starvation_rate:.2} PERCENT OF THE");
+    println!("IN YOUR {MAX_YEARS}-YEAR TERM OF OFFICE, {avg_starvation_rate:.2} PERCENT OF THE");
     println!("POPULATION STARVED PER YEAR ON THE AVERAGE, I.E. A TOTAL OF");
     println!("{total_deaths} PEOPLE DIED!!");
     let l = acres / population;
@@ -248,19 +252,13 @@ fn main() {
     // Worst outcome: fink (lines 880-885 → 565)
     if avg_starvation_rate > 33.0 || l < 7 {
         impeach(0, false);
-    }
-
-    // Bad outcome (lines 890-892 → 940)
-    if avg_starvation_rate > 10.0 || l < 9 {
+    } else if avg_starvation_rate > 10.0 || l < 9 {
+        // Bad outcome (lines 890-892 → 940)
         println!("YOUR HEAVY-HANDED PERFORMANCE SMACKS OF NERO AND IVAN IV.");
         println!("THE PEOPLE (REMAINING) FIND YOU AN UNPLEASANT RULER, AND,");
         println!("FRANKLY, HATE YOUR GUTS!!");
-        farewell();
-        return;
-    }
-
-    // Mediocre outcome (lines 895-896 → 960)
-    if avg_starvation_rate > 3.0 || l < 10 {
+    } else if avg_starvation_rate > 3.0 || l < 10 {
+        // Mediocre outcome (lines 895-896 → 960)
         let max = (0.8 * population as f64) as i64;
         let assassins = if max > 0 {
             rand::random_range(0..max)
@@ -271,12 +269,10 @@ fn main() {
         println!("REALLY WASN'T TOO BAD AT ALL. {assassins} PEOPLE");
         println!("WOULD DEARLY LIKE TO SEE YOU ASSASSINATED BUT WE ALL HAVE OUR");
         println!("TRIVIAL PROBLEMS.");
-        farewell();
-        return;
+    } else {
+        // Best outcome (lines 900-905)
+        println!("A FANTASTIC PERFORMANCE!!!  CHARLEMAGNE, DISRAELI, AND");
+        println!("JEFFERSON COMBINED COULD NOT HAVE DONE BETTER!");
     }
-
-    // Best outcome (lines 900-905)
-    println!("A FANTASTIC PERFORMANCE!!!  CHARLEMAGNE, DISRAELI, AND");
-    println!("JEFFERSON COMBINED COULD NOT HAVE DONE BETTER!");
     farewell();
 }
