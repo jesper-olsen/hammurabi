@@ -58,11 +58,54 @@ fn impeach(d: u32, per_year: bool) {
 }
 
 /// Quit at the player's own request (line 850).
-fn player_quit() {
+fn player_quit() -> ! {
     println!();
     println!("HAMURABI:  I CANNOT DO WHAT YOU WISH.");
     println!("GET YOURSELF ANOTHER STEWARD!!!!!");
     farewell();
+    std::process::exit(1);
+}
+
+struct State {
+    total_deaths: u32,        // cumulative deaths
+    avg_starvation_rate: f64, // running average % starved per year
+    year: u32,                // year counter
+    population: u32,
+    store: u32,          // bushels in store
+    rats_ate: u32,       // rats ate  (H-S = 3000-2800)
+    yield_per_acre: u32, // bushels harvested per acre
+    acres: u32,          // acres owned  (H/Y = 3000/3)
+    immigrants: u32,     // immigrants last year
+    plague: bool,
+    starved: u32, // people who starved last year (shown in report)
+}
+
+impl State {
+    fn new() -> Self {
+        State {
+            total_deaths: 0,
+            avg_starvation_rate: 0.0,
+            year: 0,
+            population: 95,
+            store: 2800,
+            rats_ate: 200,
+            yield_per_acre: 3,
+            acres: 1000,
+            immigrants: 5,
+            plague: false,
+            starved: 0,
+        }
+    }
+
+    fn buy_land(&mut self, acres: u32, price: u32) {
+        self.acres += acres;
+        self.store -= acres * price;
+    }
+
+    fn sell_land(&mut self, acres: u32, price: u32) {
+        self.acres -= acres;
+        self.store += acres * price;
+    }
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -79,99 +122,88 @@ fn main() {
     println!();
 
     // ── Initial state (lines 95-110) ─────────────────────────────────────────
-    let mut total_deaths: u32 = 0; // cumulative deaths
-    let mut avg_starvation_rate: f64 = 0.0; // running average % starved per year
-    let mut year: u32 = 0; // year counter
-    let mut population: u32 = 95;
-    let mut store: u32 = 2800; // bushels in store
-    let mut rats_ate: u32 = 200; // rats ate  (H-S = 3000-2800)
-    let mut yield_per_acre: u32 = 3; // bushels harvested per acre
-    let mut acres: u32 = 1000; // acres owned  (H/Y = 3000/3)
-    let mut immigrants: u32 = 5; // immigrants last year
-    let mut plague: bool = false;
-    let mut starved: u32 = 0; // people who starved last year (shown in report)
-
+    let mut state = State::new();
     let mut rnd = rand::rng();
 
     // ── Year loop ────────────────────────────────────────────────────────────
     loop {
+        state.year += 1;
+
         // ── Annual report (lines 215-260) ────────────────────────────────────
         println!();
         println!();
         println!("HAMURABI:  I BEG TO REPORT TO YOU,");
-        year += 1;
-        println!("IN YEAR {year}, {starved} PEOPLE STARVED, {immigrants} CAME TO THE CITY,");
-        population += immigrants;
+        println!(
+            "IN YEAR {}, {} PEOPLE STARVED, {} CAME TO THE CITY,",
+            state.year, state.starved, state.immigrants
+        );
+        state.population += state.immigrants;
 
         // Plague (lines 227-229): q ≤ 0 means plague struck
-        if plague {
-            population /= 2;
+        if state.plague {
+            state.population /= 2;
             println!("A HORRIBLE PLAGUE STRUCK!  HALF THE PEOPLE DIED.");
         }
 
-        println!("POPULATION IS NOW {}", population);
-        println!("THE CITY NOW OWNS  {acres} ACRES.");
-        println!("YOU HARVESTED {} BUSHELS PER ACRE.", yield_per_acre);
-        println!("THE RATS ATE {rats_ate} BUSHELS.");
-        println!("YOU NOW HAVE {store} BUSHELS IN STORE.");
+        println!("POPULATION IS NOW {}", state.population);
+        println!("THE CITY NOW OWNS  {} ACRES.", state.acres);
+        println!("YOU HARVESTED {} BUSHELS PER ACRE.", state.yield_per_acre);
+        println!("THE RATS ATE {} BUSHELS.", state.rats_ate);
+        println!("YOU NOW HAVE {} BUSHELS IN STORE.", state.store);
         println!();
 
         // End of 10-year term (line 270)
-        if year > MAX_YEARS {
+        if state.year > MAX_YEARS {
             break;
         }
 
         // ── Land price (lines 310-312) ────────────────────────────────────────
-        yield_per_acre = rnd.random_range(17..=26);
-        println!("LAND IS TRADING AT {} BUSHELS PER ACRE.", yield_per_acre);
+        let price = rnd.random_range(17..=26);
+        println!("LAND IS TRADING AT {} BUSHELS PER ACRE.", price);
 
         // ── Buy acres (lines 320-334) ─────────────────────────────────────────
         let buy: u32 = loop {
             let n = read_int("HOW MANY ACRES DO YOU WISH TO BUY? ");
             if n < 0 {
-                return player_quit();
+                player_quit();
             }
             let n = n as u32;
-            if yield_per_acre * n <= store {
+            if price * n <= state.store {
+                state.buy_land(n, price);
                 break n;
             }
-            not_enough_grain(store);
+            not_enough_grain(state.store);
         };
 
         // ── Sell acres (lines 340-350) — only if nothing bought ──────────────
-        let sell: u32 = if buy == 0 {
+        if buy == 0 {
             loop {
                 let n = read_int("HOW MANY ACRES DO YOU WISH TO SELL? ");
                 if n < 0 {
-                    return player_quit();
+                    player_quit();
                 }
                 let n = n as u32;
-                if n <= acres {
-                    break n;
+                if n <= state.acres {
+                    state.sell_land(n, price);
                 }
-                not_enough_acres(acres);
+                not_enough_acres(state.acres);
             }
-        } else {
-            0
         };
-
-        acres += buy - sell;
-        store += yield_per_acre * (sell - buy);
 
         // ── Feed people (lines 410-430) ───────────────────────────────────────
         println!();
         let food: u32 = loop {
             let n = read_int("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ");
             if n < 0 {
-                return player_quit();
+                player_quit();
             }
             let n = n as u32;
-            if n <= store {
+            if n <= state.store {
                 break n;
             }
-            not_enough_grain(store);
+            not_enough_grain(state.store);
         };
-        store -= food;
+        state.store -= food;
         println!();
 
         // ── Plant seed (lines 440-510) ────────────────────────────────────────
@@ -181,94 +213,100 @@ fn main() {
                 break 0;
             }
             if n < 0 {
-                return player_quit();
+                player_quit();
             }
             let n = n as u32;
-            if n > acres {
-                not_enough_acres(acres);
+            if n > state.acres {
+                not_enough_acres(state.acres);
                 continue;
             }
-            if n / 2 > store {
-                not_enough_grain(store);
+            if n / 2 > state.store {
+                not_enough_grain(state.store);
                 continue;
             }
-            if n > ACRES_PER_PERSON * population {
+            if n > ACRES_PER_PERSON * state.population {
                 println!(
                     "BUT YOU HAVE ONLY {} PEOPLE TO TEND THE FIELDS!  NOW THEN,",
-                    population
+                    state.population
                 );
                 continue;
             }
             break n;
         };
 
-        store -= planted / 2; // seed cost
+        // plant 2 acres with one bushel... original used integer division,
+        let seed_cost = planted.div_ceil(2);
+        state.store -= seed_cost;
 
         // ── Harvest (lines 511-530) ───────────────────────────────────────────
-        yield_per_acre = rnd.random_range(1..=5);
-        let harvest = planted * yield_per_acre;
-        rats_ate = 0;
+        state.yield_per_acre = rnd.random_range(1..=5);
+        let harvest = planted * state.yield_per_acre;
+        state.rats_ate = 0;
 
         let c2 = rnd.random_range(1..=5);
         if c2 % 2 == 0 {
             // even → rats
-            rats_ate = store / c2;
+            state.rats_ate = state.store / c2;
         }
-        store += harvest - rats_ate;
+        state.store += harvest - state.rats_ate;
 
         // ── Immigration (line 533) ────────────────────────────────────────────
         //let c3 = rnd.random_range(1..=5); // chaos factor
         // immigrants proportional to attractiveness of city
         // Uses c2, the same roll as the rat check above - not a fresh draw
-        immigrants =
-            (c2 as f64 * (BUSHELS_PER_PERSON * acres + store) as f64 / population as f64 / 100.0
-                + 1.0)
-                .floor() as u32;
+        state.immigrants = (c2 as f64 * (BUSHELS_PER_PERSON * state.acres + state.store) as f64
+            / state.population as f64
+            / 100.0
+            + 1.0)
+            .floor() as u32;
 
         // ── Starvation (lines 540-555) ────────────────────────────────────────
         let fed_count = food / BUSHELS_PER_PERSON;
 
-        plague = rnd.random_bool(0.15);
+        state.plague = rnd.random_bool(0.15);
 
-        if population < fed_count {
+        if state.population < fed_count {
             // Everyone fed; no starvation
-            starved = 0;
+            state.starved = 0;
         } else {
-            starved = population - fed_count;
-            if starved as f64 > 0.45 * population as f64 {
-                impeach(starved, true);
+            state.starved = state.population - fed_count;
+            if state.starved as f64 > 0.45 * state.population as f64 {
+                impeach(state.starved, true);
                 farewell();
                 return;
             }
             // Running average of % starved
-            avg_starvation_rate = ((year - 1) as f64 * avg_starvation_rate
-                + starved as f64 * 100.0 / population as f64)
-                / year as f64;
-            population = fed_count;
-            total_deaths += starved;
+            state.avg_starvation_rate = ((state.year - 1) as f64 * state.avg_starvation_rate
+                + state.starved as f64 * 100.0 / state.population as f64)
+                / state.year as f64;
+            state.population = fed_count;
+            state.total_deaths += state.starved;
         }
     }
 
     // ── End-of-term evaluation (lines 860-975) ─────────────────────────────
-    println!("IN YOUR {MAX_YEARS}-YEAR TERM OF OFFICE, {avg_starvation_rate:.2} PERCENT OF THE");
+    println!(
+        "IN YOUR {MAX_YEARS}-YEAR TERM OF OFFICE, {:.2} PERCENT OF THE",
+        state.avg_starvation_rate
+    );
     println!("POPULATION STARVED PER YEAR ON THE AVERAGE, I.E. A TOTAL OF");
-    println!("{total_deaths} PEOPLE DIED!!");
-    let l = acres / population;
+    println!("{} PEOPLE DIED!!", state.total_deaths);
+    let l = state.acres / state.population;
     println!("YOU STARTED WITH 10 ACRES PER PERSON AND ENDED WITH");
     println!("{l} ACRES PER PERSON.");
     println!();
 
-    if avg_starvation_rate > 33.0 || l < 7 {
+    if state.avg_starvation_rate > 33.0 || l < 7 {
         // Worst outcome: fink (lines 880-885 → 565)
         impeach(0, false);
-    } else if avg_starvation_rate > 10.0 || l < 9 {
+    } else if state.avg_starvation_rate > 10.0 || l < 9 {
         // Bad outcome (lines 890-892 → 940)
         println!("YOUR HEAVY-HANDED PERFORMANCE SMACKS OF NERO AND IVAN IV.");
         println!("THE PEOPLE (REMAINING) FIND YOU AN UNPLEASANT RULER, AND,");
         println!("FRANKLY, HATE YOUR GUTS!!");
-    } else if avg_starvation_rate > 3.0 || l < 10 {
+    } else if state.avg_starvation_rate > 3.0 || l < 10 {
         // Mediocre outcome (lines 895-896 → 960)
-        let max = (0.8 * population as f64) as u32;
+        let max = (0.8 * state.population as f64) as u32;
         let assassins = if max > 0 { rnd.random_range(0..max) } else { 0 };
         println!("YOUR PERFORMANCE COULD HAVE BEEN SOMEWHAT BETTER, BUT");
         println!("REALLY WASN'T TOO BAD AT ALL. {assassins} PEOPLE");
