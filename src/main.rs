@@ -1,33 +1,5 @@
 use std::io::{self, Write};
-
-// ── RNG ──────────────────────────────────────────────────────────────────────
-// Xorshift64 seeded from the system clock; no external crates needed.
-fn rnd() -> f64 {
-    use std::cell::Cell;
-    use std::time::SystemTime;
-    thread_local! {
-        static SEED: Cell<u64> = Cell::new(
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_nanos() as u64 ^ 0xdeadbeef_cafebabe)
-                .unwrap_or(6_364_136_223_846_793_005)
-        );
-    }
-    SEED.with(|cell| {
-        let mut x = cell.get();
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        cell.set(x);
-        // Map to [0, 1)
-        (x >> 11) as f64 / (1u64 << 53) as f64
-    })
-}
-
-/// BASIC's INT(RND(1)*5)+1 — yields 1..=5
-fn rand_c() -> i64 {
-    (rnd() * 5.0).floor() as i64 + 1
-}
+//use rand::RngExt;
 
 // ── I/O helpers ──────────────────────────────────────────────────────────────
 
@@ -74,7 +46,7 @@ fn farewell() {
 fn impeach(d: i64, per_year: bool) {
     println!();
     if per_year {
-        println!("YOU STARVED {d} PEOPLE IN ONE YEAR!!!", d);
+        println!("YOU STARVED {} PEOPLE IN ONE YEAR!!!", d);
     }
     println!("DUE TO THIS EXTREME MISMANAGEMENT YOU HAVE NOT ONLY");
     println!("BEEN IMPEACHED AND THROWN OUT OF OFFICE BUT YOU HAVE");
@@ -109,13 +81,13 @@ fn main() {
     let mut d1: i64 = 0; // cumulative deaths
     let mut p1: f64 = 0.0; // running average % starved per year
     let mut z: i64 = 0; // year counter
-    let mut p: i64 = 95; // population
+    let mut population: i64 = 95;
     let mut s: i64 = 2800; // bushels in store
     let mut e: i64 = 200; // rats ate  (H-S = 3000-2800)
-    let mut y: i64 = 3; // bushels harvested per acre
+    let mut yield_per_acre: i64 = 3; // bushels harvested per acre
     let mut a: i64 = 1000; // acres owned  (H/Y = 3000/3)
     let mut i_imm: i64 = 5; // immigrants last year
-    let mut q: i64 = 1; // plague flag: >0 = no plague
+    let mut plague: bool = false;
     let mut d: i64 = 0; // people who starved last year (shown in report)
 
     // ── Year loop ────────────────────────────────────────────────────────────
@@ -126,17 +98,17 @@ fn main() {
         println!("HAMURABI:  I BEG TO REPORT TO YOU,");
         z += 1;
         println!("IN YEAR {z}, {d} PEOPLE STARVED, {i_imm} CAME TO THE CITY,");
-        p += i_imm;
+        population += i_imm;
 
         // Plague (lines 227-229): q ≤ 0 means plague struck
-        if q <= 0 {
-            p /= 2;
+        if plague {
+            population /= 2;
             println!("A HORRIBLE PLAGUE STRUCK!  HALF THE PEOPLE DIED.");
         }
 
-        println!("POPULATION IS NOW {p}");
+        println!("POPULATION IS NOW {}", population);
         println!("THE CITY NOW OWNS  {a} ACRES.");
-        println!("YOU HARVESTED {y} BUSHELS PER ACRE.");
+        println!("YOU HARVESTED {} BUSHELS PER ACRE.", yield_per_acre);
         println!("THE RATS ATE {e} BUSHELS.");
         println!("YOU NOW HAVE  {s} BUSHELS IN STORE.");
         println!();
@@ -147,8 +119,8 @@ fn main() {
         }
 
         // ── Land price (lines 310-312) ────────────────────────────────────────
-        y = (10.0 * rnd()).floor() as i64 + 17;
-        println!("LAND IS TRADING AT {} BUSHELS PER ACRE.", y);
+        yield_per_acre = rand::random_range(17..=26);
+        println!("LAND IS TRADING AT {} BUSHELS PER ACRE.", yield_per_acre);
 
         // ── Buy acres (lines 320-334) ─────────────────────────────────────────
         let buy: i64 = loop {
@@ -156,7 +128,7 @@ fn main() {
             if n < 0 {
                 player_quit();
             }
-            if y * n <= s {
+            if yield_per_acre * n <= s {
                 break n;
             }
             not_enough_grain(s);
@@ -179,8 +151,7 @@ fn main() {
         };
 
         a += buy - sell;
-        s -= y * buy;
-        s += y * sell;
+        s += yield_per_acre * (sell - buy);
 
         // ── Feed people (lines 410-430) ───────────────────────────────────────
         println!();
@@ -214,10 +185,10 @@ fn main() {
                 not_enough_grain(s);
                 continue;
             }
-            if n >= 10 * p {
+            if n >= 10 * population {
                 println!(
                     "BUT YOU HAVE ONLY {} PEOPLE TO TEND THE FIELDS!  NOW THEN,",
-                    p
+                    population
                 );
                 continue;
             }
@@ -227,12 +198,11 @@ fn main() {
         s -= planted / 2; // seed cost
 
         // ── Harvest (lines 511-530) ───────────────────────────────────────────
-        let yield_per_acre = rand_c(); // 1..=5
-        y = yield_per_acre;
-        let harvest = planted * y;
+        yield_per_acre = rand::random_range(1..=5);
+        let harvest = planted * yield_per_acre;
         e = 0;
 
-        let rat_roll = rand_c(); // 1..=5
+        let rat_roll = rand::random_range(1..=5);
         if rat_roll % 2 == 0 {
             // even → rats
             e = s / rat_roll;
@@ -240,26 +210,25 @@ fn main() {
         s = s - e + harvest;
 
         // ── Immigration (line 533) ────────────────────────────────────────────
-        let c3 = rand_c();
-        i_imm = (c3 as f64 * (20 * a + s) as f64 / p as f64 / 100.0 + 1.0).floor() as i64;
+        let c3 = rand::random_range(1..=5);
+        i_imm = (c3 as f64 * (20 * a + s) as f64 / population as f64 / 100.0 + 1.0).floor() as i64;
 
         // ── Starvation (lines 540-555) ────────────────────────────────────────
         let fed_count = food / 20; // each 20 bushels feeds one person
 
-        // Plague roll for *next* year: >0 = no plague
-        q = (10.0 * (2.0 * rnd() - 0.3)).floor() as i64;
+        plague = rand::random_bool(0.15);
 
-        if p < fed_count {
+        if population < fed_count {
             // Everyone fed; no starvation
             d = 0;
         } else {
-            d = p - fed_count;
-            if d as f64 > 0.45 * p as f64 {
+            d = population - fed_count;
+            if d as f64 > 0.45 * population as f64 {
                 impeach(d, true);
             }
             // Running average of % starved
-            p1 = ((z - 1) as f64 * p1 + d as f64 * 100.0 / p as f64) / z as f64;
-            p = fed_count;
+            p1 = ((z - 1) as f64 * p1 + d as f64 * 100.0 / population as f64) / z as f64;
+            population = fed_count;
             d1 += d;
         }
     }
@@ -268,7 +237,7 @@ fn main() {
     println!("IN YOUR 10-YEAR TERM OF OFFICE, {p1:.2} PERCENT OF THE");
     println!("POPULATION STARVED PER YEAR ON THE AVERAGE, I.E. A TOTAL OF");
     println!("{d1} PEOPLE DIED!!");
-    let l = a / p;
+    let l = a / population;
     println!("YOU STARTED WITH 10 ACRES PER PERSON AND ENDED WITH");
     println!("{l} ACRES PER PERSON.");
     println!();
@@ -289,7 +258,12 @@ fn main() {
 
     // Mediocre outcome (lines 895-896 → 960)
     if p1 > 3.0 || l < 10 {
-        let assassins = (p as f64 * 0.8 * rnd()).floor() as i64;
+        let max = (0.8 * population as f64) as i64;
+        let assassins = if max > 0 {
+            rand::random_range(0..max)
+        } else {
+            0
+        };
         println!("YOUR PERFORMANCE COULD HAVE BEEN SOMEWHAT BETTER, BUT");
         println!("REALLY WASN'T TOO BAD AT ALL. {assassins} PEOPLE");
         println!("WOULD DEARLY LIKE TO SEE YOU ASSASSINATED BUT WE ALL HAVE OUR");
