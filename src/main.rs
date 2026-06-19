@@ -1,9 +1,9 @@
-use std::io::{self, Write};
 use rand::RngExt;
+use std::io::{self, Write};
 
-const MAX_YEARS: i64 = 10;
-const ACRES_PER_PERSON: i64 = 10;
-const BUSHELS_PER_PERSON: i64 = 20;
+const MAX_YEARS: u32 = 10;
+const ACRES_PER_PERSON: u32 = 10;
+const BUSHELS_PER_PERSON: u32 = 20;
 
 // ── I/O helpers ──────────────────────────────────────────────────────────────
 
@@ -24,12 +24,12 @@ fn read_int(prompt: &str) -> i64 {
     }
 }
 
-fn not_enough_grain(s: i64) {
+fn not_enough_grain(s: u32) {
     println!("HAMURABI:  THINK AGAIN.  YOU HAVE ONLY");
     println!("{s} BUSHELS OF GRAIN.  NOW THEN,");
 }
 
-fn not_enough_acres(a: i64) {
+fn not_enough_acres(a: u32) {
     println!("HAMURABI:  THINK AGAIN.  YOU OWN ONLY {a} ACRES.  NOW THEN,");
 }
 
@@ -47,7 +47,7 @@ fn farewell() {
 }
 
 /// Instant impeachment (lines 560-567 / 850-857).
-fn impeach(d: i64, per_year: bool) {
+fn impeach(d: u32, per_year: bool) {
     println!();
     if per_year {
         println!("YOU STARVED {} PEOPLE IN ONE YEAR!!!", d);
@@ -79,17 +79,17 @@ fn main() {
     println!();
 
     // ── Initial state (lines 95-110) ─────────────────────────────────────────
-    let mut total_deaths: i64 = 0; // cumulative deaths
+    let mut total_deaths: u32 = 0; // cumulative deaths
     let mut avg_starvation_rate: f64 = 0.0; // running average % starved per year
-    let mut year: i64 = 0; // year counter
-    let mut population: i64 = 95;
-    let mut store: i64 = 2800; // bushels in store
-    let mut rats_ate: i64 = 200; // rats ate  (H-S = 3000-2800)
-    let mut yield_per_acre: i64 = 3; // bushels harvested per acre
-    let mut acres: i64 = 1000; // acres owned  (H/Y = 3000/3)
-    let mut immigrants: i64 = 5; // immigrants last year
+    let mut year: u32 = 0; // year counter
+    let mut population: u32 = 95;
+    let mut store: u32 = 2800; // bushels in store
+    let mut rats_ate: u32 = 200; // rats ate  (H-S = 3000-2800)
+    let mut yield_per_acre: u32 = 3; // bushels harvested per acre
+    let mut acres: u32 = 1000; // acres owned  (H/Y = 3000/3)
+    let mut immigrants: u32 = 5; // immigrants last year
     let mut plague: bool = false;
-    let mut starved: i64 = 0; // people who starved last year (shown in report)
+    let mut starved: u32 = 0; // people who starved last year (shown in report)
 
     let mut rnd = rand::rng();
 
@@ -126,11 +126,12 @@ fn main() {
         println!("LAND IS TRADING AT {} BUSHELS PER ACRE.", yield_per_acre);
 
         // ── Buy acres (lines 320-334) ─────────────────────────────────────────
-        let buy: i64 = loop {
+        let buy: u32 = loop {
             let n = read_int("HOW MANY ACRES DO YOU WISH TO BUY? ");
             if n < 0 {
                 return player_quit();
             }
+            let n = n as u32;
             if yield_per_acre * n <= store {
                 break n;
             }
@@ -138,12 +139,13 @@ fn main() {
         };
 
         // ── Sell acres (lines 340-350) — only if nothing bought ──────────────
-        let sell: i64 = if buy == 0 {
+        let sell: u32 = if buy == 0 {
             loop {
                 let n = read_int("HOW MANY ACRES DO YOU WISH TO SELL? ");
                 if n < 0 {
                     return player_quit();
                 }
+                let n = n as u32;
                 if n <= acres {
                     break n;
                 }
@@ -158,11 +160,12 @@ fn main() {
 
         // ── Feed people (lines 410-430) ───────────────────────────────────────
         println!();
-        let food: i64 = loop {
+        let food: u32 = loop {
             let n = read_int("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ");
             if n < 0 {
                 return player_quit();
             }
+            let n = n as u32;
             if n <= store {
                 break n;
             }
@@ -172,7 +175,7 @@ fn main() {
         println!();
 
         // ── Plant seed (lines 440-510) ────────────────────────────────────────
-        let planted: i64 = loop {
+        let planted: u32 = loop {
             let n = read_int("HOW MANY ACRES DO YOU WISH TO PLANT WITH SEED? ");
             if n == 0 {
                 break 0;
@@ -180,6 +183,7 @@ fn main() {
             if n < 0 {
                 return player_quit();
             }
+            let n = n as u32;
             if n > acres {
                 not_enough_acres(acres);
                 continue;
@@ -219,7 +223,7 @@ fn main() {
         immigrants =
             (c2 as f64 * (BUSHELS_PER_PERSON * acres + store) as f64 / population as f64 / 100.0
                 + 1.0)
-                .floor() as i64;
+                .floor() as u32;
 
         // ── Starvation (lines 540-555) ────────────────────────────────────────
         let fed_count = food / BUSHELS_PER_PERSON;
@@ -254,8 +258,8 @@ fn main() {
     println!("{l} ACRES PER PERSON.");
     println!();
 
-    // Worst outcome: fink (lines 880-885 → 565)
     if avg_starvation_rate > 33.0 || l < 7 {
+        // Worst outcome: fink (lines 880-885 → 565)
         impeach(0, false);
     } else if avg_starvation_rate > 10.0 || l < 9 {
         // Bad outcome (lines 890-892 → 940)
@@ -264,12 +268,8 @@ fn main() {
         println!("FRANKLY, HATE YOUR GUTS!!");
     } else if avg_starvation_rate > 3.0 || l < 10 {
         // Mediocre outcome (lines 895-896 → 960)
-        let max = (0.8 * population as f64) as i64;
-        let assassins = if max > 0 {
-            rnd.random_range(0..max)
-        } else {
-            0
-        };
+        let max = (0.8 * population as f64) as u32;
+        let assassins = if max > 0 { rnd.random_range(0..max) } else { 0 };
         println!("YOUR PERFORMANCE COULD HAVE BEEN SOMEWHAT BETTER, BUT");
         println!("REALLY WASN'T TOO BAD AT ALL. {assassins} PEOPLE");
         println!("WOULD DEARLY LIKE TO SEE YOU ASSASSINATED BUT WE ALL HAVE OUR");
