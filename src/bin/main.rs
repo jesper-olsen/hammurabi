@@ -16,12 +16,12 @@ fn read_input(prompt: &str) -> io::Result<PlayerInput> {
     loop {
         print!("{prompt}");
         io::stdout().flush()?;
-        
+
         let mut line = String::new();
         if io::stdin().read_line(&mut line)? == 0 {
             return Ok(PlayerInput::Quit); // Handle EOF gracefully
         }
-        
+
         if let Ok(n) = line.trim().parse::<i64>() {
             if n < 0 {
                 return Ok(PlayerInput::Quit);
@@ -31,7 +31,6 @@ fn read_input(prompt: &str) -> io::Result<PlayerInput> {
         println!("PLEASE ENTER A WHOLE NUMBER.");
     }
 }
-
 
 fn not_enough_grain(s: u32) {
     println!("HAMURABI:  THINK AGAIN.  YOU HAVE ONLY");
@@ -75,7 +74,6 @@ fn quit_game() -> io::Result<()> {
     Ok(())
 }
 
-
 struct State {
     total_deaths: u32,        // cumulative deaths
     avg_starvation_rate: f64, // running average % starved per year
@@ -111,12 +109,12 @@ impl State {
 
     fn buy_land(&mut self, acres: u32, price: u32) {
         self.acres += acres;
-        self.grain-= acres * price;
+        self.grain -= acres * price;
     }
 
     fn sell_land(&mut self, acres: u32, price: u32) {
         self.acres -= acres;
-        self.grain+= acres * price;
+        self.grain += acres * price;
     }
 }
 
@@ -208,7 +206,7 @@ fn main() -> io::Result<()> {
                 PlayerInput::Amount(_) => not_enough_grain(state.grain),
             }
         };
-        state.grain-= food;
+        state.grain -= food;
         println!();
 
         // ── Plant seed (lines 440-510) ────────────────────────────────────────
@@ -219,7 +217,10 @@ fn main() -> io::Result<()> {
                 PlayerInput::Amount(n) if n > state.acres => not_enough_acres(state.acres),
                 PlayerInput::Amount(n) if n / 2 > state.grain => not_enough_grain(state.grain),
                 PlayerInput::Amount(n) if n > ACRES_PER_PERSON * state.population => {
-                    println!("BUT YOU HAVE ONLY {} PEOPLE TO TEND THE FIELDS!  NOW THEN,", state.population);
+                    println!(
+                        "BUT YOU HAVE ONLY {} PEOPLE TO TEND THE FIELDS!  NOW THEN,",
+                        state.population
+                    );
                 }
                 PlayerInput::Amount(n) => break n,
             }
@@ -228,7 +229,7 @@ fn main() -> io::Result<()> {
         // plant 2 acres with one bushel... original used integer division,
         //let seed_cost = planted.div_ceil(2);
         let seed_cost = planted / 2;
-        state.grain-= seed_cost;
+        state.grain -= seed_cost;
 
         // ── Harvest (lines 511-530) ───────────────────────────────────────────
         state.yield_per_acre = rnd.random_range(1..=5);
