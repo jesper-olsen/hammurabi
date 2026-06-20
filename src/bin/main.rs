@@ -93,14 +93,16 @@ struct State {
 impl State {
     fn new() -> Self {
         State {
-            total_deaths: 0,
-            avg_starvation_rate: 0.0,
             year: 0,
             population: 95,
             grain: 2800,
+            acres: 1000,
+
+            // (last) year record
+            total_deaths: 0,
+            avg_starvation_rate: 0.0,
             rats_ate: 200,
             yield_per_acre: 3,
-            acres: 1000,
             immigrants: 5,
             plague: false,
             starved: 0,
@@ -235,7 +237,7 @@ fn main() -> io::Result<()> {
 
         let c2 = rnd.random_range(1..=5);
         if c2 % 2 == 0 {
-            // even → rats
+            // even => rats
             state.rats_ate = state.grain / c2;
         }
         state.grain += harvest - state.rats_ate;
