@@ -10,6 +10,17 @@ enum PlayerInput {
     Quit,
 }
 
+enum YearOutcome {
+    Continue,
+    Impeached,
+}
+
+enum NotEnough {
+    Grain,
+    Acres,
+    Workers,
+}
+
 // ── I/O helpers ──────────────────────────────────────────────────────────────
 
 fn read_input(prompt: &str) -> io::Result<PlayerInput> {
@@ -86,10 +97,12 @@ struct State {
     immigrants: u32,     // immigrants last year
     plague: bool,
     starved: u32, // people who starved last year (shown in report)
+    rng: rand::rngs::ThreadRng,
 }
 
 impl State {
     fn new() -> Self {
+        // (lines 95-110)
         State {
             year: 0,
             population: 95,
@@ -104,23 +117,111 @@ impl State {
             immigrants: 5,
             plague: false,
             starved: 0,
+            rng: rand::rng(),
         }
     }
 
-    fn buy_land(&mut self, acres: u32, price: u32) {
-        self.acres += acres;
-        self.grain -= acres * price;
+    fn buy_land(&mut self, acres: u32, price: u32) -> Result<(), NotEnough> {
+        if u64::from(price) * u64::from(acres) <= self.grain as u64 {
+            self.acres += acres;
+            self.grain -= acres * price;
+            Ok(())
+        } else {
+            Err(NotEnough::Grain)
+        }
     }
 
-    fn sell_land(&mut self, acres: u32, price: u32) {
-        self.acres -= acres;
-        self.grain += acres * price;
+    fn sell_land(&mut self, acres: u32, price: u32) -> Result<(), NotEnough> {
+        if acres <= self.acres {
+            self.acres -= acres;
+            self.grain += acres * price;
+            Ok(())
+        } else {
+            Err(NotEnough::Acres)
+        }
+    }
+
+    fn allocate_food(&mut self, bushels: u32) -> Result<(), NotEnough> {
+        if bushels <= self.grain {
+            self.grain -= bushels;
+            Ok(())
+        } else {
+            Err(NotEnough::Grain)
+        }
+    }
+
+    fn plant_seed(&mut self, acres: u32) -> Result<(), NotEnough> {
+        let seed_cost = acres / 2;
+        if acres > self.acres {
+            Err(NotEnough::Acres)
+        } else if seed_cost > self.grain {
+            Err(NotEnough::Grain)
+        } else if acres > ACRES_PER_PERSON * self.population {
+            Err(NotEnough::Workers)
+        } else {
+            // plant 2 acres with one bushel... original used integer division,
+            //let seed_cost = planted.div_ceil(2);
+            self.grain -= seed_cost;
+            Ok(())
+        }
+    }
+
+    fn start_year(&mut self) {
+        self.year += 1;
+        self.population += self.immigrants;
+        if self.plague {
+            self.population /= 2;
+        }
+    }
+
+    fn end_year(&mut self, food: u32, planted: u32) -> YearOutcome {
+        // ── Harvest (lines 511-530) ───────────────────────────────────────────
+        self.yield_per_acre = self.rng.random_range(1..=5);
+        let harvest = planted * self.yield_per_acre;
+        self.rats_ate = 0;
+
+        let c2 = self.rng.random_range(1..=5);
+        if c2 % 2 == 0 {
+            // even => rats
+            self.rats_ate = self.grain / c2;
+        }
+        self.grain += harvest - self.rats_ate;
+
+        // ── Immigration (line 533) ────────────────────────────────────────────
+        //let c3 = rnd.random_range(1..=5); // chaos factor
+        // immigrants proportional to attractiveness of city
+        // Uses c2, the same roll as the rat check above - not a fresh draw
+        self.immigrants = (c2 as f64 * (BUSHELS_PER_PERSON * self.acres + self.grain) as f64
+            / self.population as f64
+            / 100.0
+            + 1.0)
+            .floor() as u32;
+
+        // ── Starvation (lines 540-555) ────────────────────────────────────────
+        let fed_count = food / BUSHELS_PER_PERSON;
+
+        self.plague = self.rng.random_bool(0.15);
+
+        if fed_count >= self.population {
+            // Everyone fed; no starvation
+            self.starved = 0;
+        } else {
+            self.starved = self.population - fed_count;
+            if self.starved as f64 > 0.45 * self.population as f64 {
+                return YearOutcome::Impeached;
+            }
+            // Running average of % starved
+            self.avg_starvation_rate = ((self.year - 1) as f64 * self.avg_starvation_rate
+                + self.starved as f64 * 100.0 / self.population as f64)
+                / self.year as f64;
+            self.population = fed_count;
+            self.total_deaths += self.starved;
+        }
+        YearOutcome::Continue
     }
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
-
-fn main() -> io::Result<()> {
+fn intro() {
     // ── Title (lines 10-90) ──────────────────────────────────────────────────
     println!("{:>40}", "HAMURABI");
     println!("{:>51}", "CREATIVE COMPUTING  MORRISTOWN, NEW JERSEY");
@@ -130,37 +231,43 @@ fn main() -> io::Result<()> {
     println!("TRY YOUR HAND AT GOVERNING ANCIENT SUMERIA");
     println!("FOR A TEN-YEAR TERM OF OFFICE.");
     println!();
+}
 
-    // ── Initial state (lines 95-110) ─────────────────────────────────────────
+fn annual_report(state: &State) {
+    // ── Annual report (lines 215-260) ────────────────────────────────────
+    println!();
+    println!();
+    println!("HAMURABI:  I BEG TO REPORT TO YOU,");
+    println!(
+        "IN YEAR {}, {} PEOPLE STARVED, {} CAME TO THE CITY,",
+        state.year, state.starved, state.immigrants
+    );
+
+    // Plague (lines 227-229): q ≤ 0 means plague struck
+    if state.plague {
+        println!("A HORRIBLE PLAGUE STRUCK!  HALF THE PEOPLE DIED.");
+    }
+
+    println!("POPULATION IS NOW {}", state.population);
+    println!("THE CITY NOW OWNS  {} ACRES.", state.acres);
+    println!("YOU HARVESTED {} BUSHELS PER ACRE.", state.yield_per_acre);
+    println!("THE RATS ATE {} BUSHELS.", state.rats_ate);
+    println!("YOU NOW HAVE {} BUSHELS IN STORE.", state.grain);
+    println!();
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
+fn main() -> io::Result<()> {
+    intro();
+
     let mut state = State::new();
-    let mut rnd = rand::rng();
 
     // ── Year loop ────────────────────────────────────────────────────────────
     loop {
-        state.year += 1;
+        state.start_year();
 
-        // ── Annual report (lines 215-260) ────────────────────────────────────
-        println!();
-        println!();
-        println!("HAMURABI:  I BEG TO REPORT TO YOU,");
-        println!(
-            "IN YEAR {}, {} PEOPLE STARVED, {} CAME TO THE CITY,",
-            state.year, state.starved, state.immigrants
-        );
-        state.population += state.immigrants;
-
-        // Plague (lines 227-229): q ≤ 0 means plague struck
-        if state.plague {
-            state.population /= 2;
-            println!("A HORRIBLE PLAGUE STRUCK!  HALF THE PEOPLE DIED.");
-        }
-
-        println!("POPULATION IS NOW {}", state.population);
-        println!("THE CITY NOW OWNS  {} ACRES.", state.acres);
-        println!("YOU HARVESTED {} BUSHELS PER ACRE.", state.yield_per_acre);
-        println!("THE RATS ATE {} BUSHELS.", state.rats_ate);
-        println!("YOU NOW HAVE {} BUSHELS IN STORE.", state.grain);
-        println!();
+        annual_report(&state);
 
         // End of 10-year term (line 270)
         if state.year > MAX_YEARS {
@@ -168,18 +275,18 @@ fn main() -> io::Result<()> {
         }
 
         // ── Land price (lines 310-312) ────────────────────────────────────────
-        let price = rnd.random_range(17..=26);
+        let price = state.rng.random_range(17..=26);
         println!("LAND IS TRADING AT {} BUSHELS PER ACRE.", price);
 
         // ── Buy acres (lines 320-334) ─────────────────────────────────────────
         let buy: u32 = loop {
             match read_input("HOW MANY ACRES DO YOU WISH TO BUY? ")? {
                 PlayerInput::Quit => return quit_game(),
-                PlayerInput::Amount(n) if price * n <= state.grain => {
-                    state.buy_land(n, price);
-                    break n;
-                }
-                PlayerInput::Amount(_) => not_enough_grain(state.grain),
+                PlayerInput::Amount(n) => match state.buy_land(n, price) {
+                    Ok(()) => break n,
+                    Err(NotEnough::Grain) => not_enough_grain(state.grain),
+                    _ => unreachable!(),
+                },
             }
         };
 
@@ -188,11 +295,11 @@ fn main() -> io::Result<()> {
             loop {
                 match read_input("HOW MANY ACRES DO YOU WISH TO SELL? ")? {
                     PlayerInput::Quit => return quit_game(),
-                    PlayerInput::Amount(n) if n <= state.acres => {
-                        state.sell_land(n, price);
-                        break;
-                    }
-                    PlayerInput::Amount(_) => not_enough_acres(state.acres),
+                    PlayerInput::Amount(n) => match state.sell_land(n, price) {
+                        Ok(()) => break,
+                        Err(NotEnough::Acres) => not_enough_acres(state.acres),
+                        _ => unreachable!(),
+                    },
                 }
             }
         };
@@ -202,78 +309,38 @@ fn main() -> io::Result<()> {
         let food: u32 = loop {
             match read_input("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ")? {
                 PlayerInput::Quit => return quit_game(),
-                PlayerInput::Amount(n) if n <= state.grain => break n,
-                PlayerInput::Amount(_) => not_enough_grain(state.grain),
+                PlayerInput::Amount(n) => match state.allocate_food(n) {
+                    Ok(()) => break n,
+                    Err(NotEnough::Grain) => not_enough_grain(state.grain),
+                    _ => unreachable!(),
+                },
             }
         };
-        state.grain -= food;
         println!();
 
         // ── Plant seed (lines 440-510) ────────────────────────────────────────
         let planted: u32 = loop {
             match read_input("HOW MANY ACRES DO YOU WISH TO PLANT WITH SEED? ")? {
                 PlayerInput::Quit => return quit_game(),
-                PlayerInput::Amount(0) => break 0,
-                PlayerInput::Amount(n) if n > state.acres => not_enough_acres(state.acres),
-                PlayerInput::Amount(n) if n / 2 > state.grain => not_enough_grain(state.grain),
-                PlayerInput::Amount(n) if n > ACRES_PER_PERSON * state.population => {
-                    println!(
+                PlayerInput::Amount(n) => match state.plant_seed(n) {
+                    Ok(()) => break n,
+                    Err(NotEnough::Acres) => not_enough_acres(state.acres),
+                    Err(NotEnough::Grain) => not_enough_grain(state.grain),
+                    Err(NotEnough::Workers) => println!(
                         "BUT YOU HAVE ONLY {} PEOPLE TO TEND THE FIELDS!  NOW THEN,",
                         state.population
-                    );
-                }
-                PlayerInput::Amount(n) => break n,
+                    ),
+                },
             }
         };
 
-        // plant 2 acres with one bushel... original used integer division,
-        //let seed_cost = planted.div_ceil(2);
-        let seed_cost = planted / 2;
-        state.grain -= seed_cost;
-
-        // ── Harvest (lines 511-530) ───────────────────────────────────────────
-        state.yield_per_acre = rnd.random_range(1..=5);
-        let harvest = planted * state.yield_per_acre;
-        state.rats_ate = 0;
-
-        let c2 = rnd.random_range(1..=5);
-        if c2 % 2 == 0 {
-            // even => rats
-            state.rats_ate = state.grain / c2;
-        }
-        state.grain += harvest - state.rats_ate;
-
-        // ── Immigration (line 533) ────────────────────────────────────────────
-        //let c3 = rnd.random_range(1..=5); // chaos factor
-        // immigrants proportional to attractiveness of city
-        // Uses c2, the same roll as the rat check above - not a fresh draw
-        state.immigrants = (c2 as f64 * (BUSHELS_PER_PERSON * state.acres + state.grain) as f64
-            / state.population as f64
-            / 100.0
-            + 1.0)
-            .floor() as u32;
-
-        // ── Starvation (lines 540-555) ────────────────────────────────────────
-        let fed_count = food / BUSHELS_PER_PERSON;
-
-        state.plague = rnd.random_bool(0.15);
-
-        if state.population < fed_count {
-            // Everyone fed; no starvation
-            state.starved = 0;
-        } else {
-            state.starved = state.population - fed_count;
-            if state.starved as f64 > 0.45 * state.population as f64 {
+        match state.end_year(food, planted) {
+            YearOutcome::Continue => {}
+            YearOutcome::Impeached => {
                 impeach(state.starved, true);
                 farewell();
                 return Ok(());
             }
-            // Running average of % starved
-            state.avg_starvation_rate = ((state.year - 1) as f64 * state.avg_starvation_rate
-                + state.starved as f64 * 100.0 / state.population as f64)
-                / state.year as f64;
-            state.population = fed_count;
-            state.total_deaths += state.starved;
         }
     }
 
@@ -300,7 +367,11 @@ fn main() -> io::Result<()> {
     } else if state.avg_starvation_rate > 3.0 || l < 10 {
         // Mediocre outcome (lines 895-896 → 960)
         let max = (0.8 * state.population as f64) as u32;
-        let assassins = if max > 0 { rnd.random_range(0..max) } else { 0 };
+        let assassins = if max > 0 {
+            state.rng.random_range(0..max)
+        } else {
+            0
+        };
         println!("YOUR PERFORMANCE COULD HAVE BEEN SOMEWHAT BETTER, BUT");
         println!("REALLY WASN'T TOO BAD AT ALL. {assassins} PEOPLE");
         println!("WOULD DEARLY LIKE TO SEE YOU ASSASSINATED BUT WE ALL HAVE OUR");
