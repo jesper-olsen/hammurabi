@@ -5,24 +5,33 @@ const MAX_YEARS: u32 = 10;
 const ACRES_PER_PERSON: u32 = 10;
 const BUSHELS_PER_PERSON: u32 = 20;
 
+enum PlayerInput {
+    Amount(u32),
+    Quit,
+}
+
 // ── I/O helpers ──────────────────────────────────────────────────────────────
 
-/// Prompt and read a non-negative integer; re-prompts on bad input.
-/// Returns the raw i64 (caller checks for negatives).
-fn read_int(prompt: &str) -> i64 {
+fn read_input(prompt: &str) -> io::Result<PlayerInput> {
     loop {
         print!("{prompt}");
-        io::stdout().flush().unwrap();
+        io::stdout().flush()?;
+        
         let mut line = String::new();
-        if io::stdin().read_line(&mut line).is_err() {
-            std::process::exit(0);
+        if io::stdin().read_line(&mut line)? == 0 {
+            return Ok(PlayerInput::Quit); // Handle EOF gracefully
         }
+        
         if let Ok(n) = line.trim().parse::<i64>() {
-            return n;
+            if n < 0 {
+                return Ok(PlayerInput::Quit);
+            }
+            return Ok(PlayerInput::Amount(n as u32));
         }
         println!("PLEASE ENTER A WHOLE NUMBER.");
     }
 }
+
 
 fn not_enough_grain(s: u32) {
     println!("HAMURABI:  THINK AGAIN.  YOU HAVE ONLY");
@@ -58,13 +67,14 @@ fn impeach(d: u32, per_year: bool) {
 }
 
 /// Quit at the player's own request (line 850).
-fn player_quit() -> ! {
+fn quit_game() -> io::Result<()> {
     println!();
-    println!("HAMURABI:  I CANNOT DO WHAT YOU WISH.");
+    println!("\nHAMURABI:  I CANNOT DO WHAT YOU WISH.");
     println!("GET YOURSELF ANOTHER STEWARD!!!!!");
     farewell();
-    std::process::exit(1);
+    Ok(())
 }
+
 
 struct State {
     total_deaths: u32,        // cumulative deaths
@@ -110,7 +120,7 @@ impl State {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
-fn main() {
+fn main() -> io::Result<()> {
     // ── Title (lines 10-90) ──────────────────────────────────────────────────
     println!("{:>40}", "HAMURABI");
     println!("{:>51}", "CREATIVE COMPUTING  MORRISTOWN, NEW JERSEY");
@@ -163,76 +173,54 @@ fn main() {
 
         // ── Buy acres (lines 320-334) ─────────────────────────────────────────
         let buy: u32 = loop {
-            let n = read_int("HOW MANY ACRES DO YOU WISH TO BUY? ");
-            if n < 0 {
-                player_quit();
+            match read_input("HOW MANY ACRES DO YOU WISH TO BUY? ")? {
+                PlayerInput::Quit => return quit_game(),
+                PlayerInput::Amount(n) if price * n <= state.grain => {
+                    state.buy_land(n, price);
+                    break n;
+                }
+                PlayerInput::Amount(_) => not_enough_grain(state.grain),
             }
-            let n = n as u32;
-            if price * n <= state.grain{
-                state.buy_land(n, price);
-                break n;
-            }
-            not_enough_grain(state.grain);
         };
 
         // ── Sell acres (lines 340-350) — only if nothing bought ──────────────
         if buy == 0 {
             loop {
-                let n = read_int("HOW MANY ACRES DO YOU WISH TO SELL? ");
-                if n < 0 {
-                    player_quit();
+                match read_input("HOW MANY ACRES DO YOU WISH TO SELL? ")? {
+                    PlayerInput::Quit => return quit_game(),
+                    PlayerInput::Amount(n) if n <= state.acres => {
+                        state.sell_land(n, price);
+                        break;
+                    }
+                    PlayerInput::Amount(_) => not_enough_acres(state.acres),
                 }
-                let n = n as u32;
-                if n <= state.acres {
-                    state.sell_land(n, price);
-                    break;
-                }
-                not_enough_acres(state.acres);
             }
         };
 
         // ── Feed people (lines 410-430) ───────────────────────────────────────
         println!();
         let food: u32 = loop {
-            let n = read_int("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ");
-            if n < 0 {
-                player_quit();
+            match read_input("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ")? {
+                PlayerInput::Quit => return quit_game(),
+                PlayerInput::Amount(n) if n <= state.grain => break n,
+                PlayerInput::Amount(_) => not_enough_grain(state.grain),
             }
-            let n = n as u32;
-            if n <= state.grain{
-                break n;
-            }
-            not_enough_grain(state.grain);
         };
         state.grain-= food;
         println!();
 
         // ── Plant seed (lines 440-510) ────────────────────────────────────────
         let planted: u32 = loop {
-            let n = read_int("HOW MANY ACRES DO YOU WISH TO PLANT WITH SEED? ");
-            if n == 0 {
-                break 0;
+            match read_input("HOW MANY ACRES DO YOU WISH TO PLANT WITH SEED? ")? {
+                PlayerInput::Quit => return quit_game(),
+                PlayerInput::Amount(0) => break 0,
+                PlayerInput::Amount(n) if n > state.acres => not_enough_acres(state.acres),
+                PlayerInput::Amount(n) if n / 2 > state.grain => not_enough_grain(state.grain),
+                PlayerInput::Amount(n) if n > ACRES_PER_PERSON * state.population => {
+                    println!("BUT YOU HAVE ONLY {} PEOPLE TO TEND THE FIELDS!  NOW THEN,", state.population);
+                }
+                PlayerInput::Amount(n) => break n,
             }
-            if n < 0 {
-                player_quit();
-            }
-            let n = n as u32;
-            if n > state.acres {
-                not_enough_acres(state.acres);
-                continue;
-            }
-            if n / 2 > state.grain {
-                not_enough_grain(state.grain);
-                continue;
-            }
-            if n > ACRES_PER_PERSON * state.population {
-                println!(
-                    "BUT YOU HAVE ONLY {} PEOPLE TO TEND THE FIELDS!  NOW THEN,",
-                    state.population
-                );
-                continue;
-            }
-            break n;
         };
 
         // plant 2 acres with one bushel... original used integer division,
@@ -275,7 +263,7 @@ fn main() {
             if state.starved as f64 > 0.45 * state.population as f64 {
                 impeach(state.starved, true);
                 farewell();
-                return;
+                return Ok(());
             }
             // Running average of % starved
             state.avg_starvation_rate = ((state.year - 1) as f64 * state.avg_starvation_rate
@@ -320,4 +308,5 @@ fn main() {
         println!("JEFFERSON COMBINED COULD NOT HAVE DONE BETTER!");
     }
     farewell();
+    Ok(())
 }
