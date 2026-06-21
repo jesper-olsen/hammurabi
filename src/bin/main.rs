@@ -22,15 +22,23 @@ enum NotEnough {
     Workers,
 }
 
+enum Verdict {
+    Worst,
+    Bad,
+    Mediocre(u32),
+    Best,
+}
+
 struct Cli;
 
 impl Cli {
-    fn read_input(&self, prompt: &str) -> io::Result<PlayerInput> {
+    fn ask(&self, prompt: &str) -> io::Result<PlayerInput> {
+        let mut line = String::new();
         loop {
             print!("{prompt}");
             io::stdout().flush()?;
 
-            let mut line = String::new();
+            line.clear();
             if io::stdin().read_line(&mut line)? == 0 {
                 return Ok(PlayerInput::Quit); // Handle EOF gracefully
             }
@@ -97,6 +105,37 @@ impl Cli {
         println!("GET YOURSELF ANOTHER STEWARD!!!!!");
         self.farewell();
         Ok(())
+    }
+
+    fn end_of_term_eval(&self, state: &State, acres_per_person: u32, verdict: Verdict) {
+        println!(
+            "IN YOUR {MAX_YEARS}-YEAR TERM OF OFFICE, {:.2} PERCENT OF THE",
+            state.avg_starvation_rate
+        );
+        println!("POPULATION STARVED PER YEAR ON THE AVERAGE, I.E. A TOTAL OF");
+        println!("{} PEOPLE DIED!!", state.total_deaths);
+        println!("YOU STARTED WITH 10 ACRES PER PERSON AND ENDED WITH");
+        println!("{acres_per_person} ACRES PER PERSON.");
+        println!();
+
+        match verdict {
+            Verdict::Worst => self.impeach(0, false),
+            Verdict::Bad => {
+                println!("YOUR HEAVY-HANDED PERFORMANCE SMACKS OF NERO AND IVAN IV.");
+                println!("THE PEOPLE (REMAINING) FIND YOU AN UNPLEASANT RULER, AND,");
+                println!("FRANKLY, HATE YOUR GUTS!!");
+            }
+            Verdict::Mediocre(assassins) => {
+                println!("YOUR PERFORMANCE COULD HAVE BEEN SOMEWHAT BETTER, BUT");
+                println!("REALLY WASN'T TOO BAD AT ALL. {assassins} PEOPLE");
+                println!("WOULD DEARLY LIKE TO SEE YOU ASSASSINATED BUT WE ALL HAVE OUR");
+                println!("TRIVIAL PROBLEMS.");
+            }
+            Verdict::Best => {
+                println!("A FANTASTIC PERFORMANCE!!!  CHARLEMAGNE, DISRAELI, AND");
+                println!("JEFFERSON COMBINED COULD NOT HAVE DONE BETTER!");
+            }
+        }
     }
 }
 
@@ -188,7 +227,10 @@ impl State {
     }
 
     fn plant_seed(&mut self, acres: u32) -> Result<(), NotEnough> {
-        let seed_cost = acres / 2;
+        // plant 2 acres with one bushel... original used integer division,
+        // which means you can get free seed, e.g. plant 1 acre, cost is 0...
+        //let seed_cost = acres / 2;
+        let seed_cost = acres.div_ceil(2);
         if acres > self.acres {
             Err(NotEnough::Acres)
         } else if seed_cost > self.grain {
@@ -196,9 +238,6 @@ impl State {
         } else if acres > ACRES_PER_PERSON * self.population {
             Err(NotEnough::Workers)
         } else {
-            // plant 2 acres with one bushel... original used integer division,
-            // which means you can get free seed, e.g. plant 1 acre, cost is 0...
-            //let seed_cost = planted.div_ceil(2);
             self.grain -= seed_cost;
             Ok(())
         }
@@ -230,7 +269,7 @@ impl State {
         // immigrants proportional to attractiveness of city
         // Uses c2, the same roll as the rat check above - not a fresh draw
         self.immigrants = (c2 as f64 * (BUSHELS_PER_PERSON * self.acres + self.grain) as f64
-            / self.population as f64
+            / (self.population.max(1)) as f64
             / 100.0
             + 1.0)
             .floor() as u32;
@@ -298,7 +337,7 @@ fn main() -> io::Result<()> {
 
         // ── Buy acres (lines 320-334) ─────────────────────────────────────────
         let buy: u32 = loop {
-            match ui.read_input("HOW MANY ACRES DO YOU WISH TO BUY? ")? {
+            match ui.ask("HOW MANY ACRES DO YOU WISH TO BUY? ")? {
                 PlayerInput::Quit => return ui.quit_game(),
                 PlayerInput::Amount(n) => match state.buy_land(n, price) {
                     Ok(()) => break n,
@@ -311,7 +350,7 @@ fn main() -> io::Result<()> {
         // ── Sell acres (lines 340-350) — only if nothing bought ──────────────
         if buy == 0 {
             loop {
-                match ui.read_input("HOW MANY ACRES DO YOU WISH TO SELL? ")? {
+                match ui.ask("HOW MANY ACRES DO YOU WISH TO SELL? ")? {
                     PlayerInput::Quit => return ui.quit_game(),
                     PlayerInput::Amount(n) => match state.sell_land(n, price) {
                         Ok(()) => break,
@@ -325,7 +364,7 @@ fn main() -> io::Result<()> {
         // ── Feed people (lines 410-430) ───────────────────────────────────────
         println!();
         let food: u32 = loop {
-            match ui.read_input("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ")? {
+            match ui.ask("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ")? {
                 PlayerInput::Quit => return ui.quit_game(),
                 PlayerInput::Amount(n) => match state.allocate_food(n) {
                     Ok(()) => break n,
@@ -338,7 +377,7 @@ fn main() -> io::Result<()> {
 
         // ── Plant seed (lines 440-510) ────────────────────────────────────────
         let planted: u32 = loop {
-            match ui.read_input("HOW MANY ACRES DO YOU WISH TO PLANT WITH SEED? ")? {
+            match ui.ask("HOW MANY ACRES DO YOU WISH TO PLANT WITH SEED? ")? {
                 PlayerInput::Quit => return ui.quit_game(),
                 PlayerInput::Amount(n) => match state.plant_seed(n) {
                     Ok(()) => break n,
@@ -363,37 +402,18 @@ fn main() -> io::Result<()> {
     }
 
     // ── End-of-term evaluation (lines 860-975) ─────────────────────────────
-    println!(
-        "IN YOUR {MAX_YEARS}-YEAR TERM OF OFFICE, {:.2} PERCENT OF THE",
-        state.avg_starvation_rate
-    );
-    println!("POPULATION STARVED PER YEAR ON THE AVERAGE, I.E. A TOTAL OF");
-    println!("{} PEOPLE DIED!!", state.total_deaths);
-    let l = state.acres / state.population;
-    println!("YOU STARTED WITH 10 ACRES PER PERSON AND ENDED WITH");
-    println!("{l} ACRES PER PERSON.");
-    println!();
-
-    if state.avg_starvation_rate > 33.0 || l < 7 {
-        // Worst outcome: fink (lines 880-885 → 565)
-        ui.impeach(0, false);
-    } else if state.avg_starvation_rate > 10.0 || l < 9 {
-        // Bad outcome (lines 890-892 → 940)
-        println!("YOUR HEAVY-HANDED PERFORMANCE SMACKS OF NERO AND IVAN IV.");
-        println!("THE PEOPLE (REMAINING) FIND YOU AN UNPLEASANT RULER, AND,");
-        println!("FRANKLY, HATE YOUR GUTS!!");
-    } else if state.avg_starvation_rate > 3.0 || l < 10 {
-        // Mediocre outcome (lines 895-896 → 960)
+    let acres_per_person = state.acres / state.population;
+    let verdict = if state.avg_starvation_rate > 33.0 || acres_per_person < 7 {
+        Verdict::Worst
+    } else if state.avg_starvation_rate > 10.0 || acres_per_person < 9 {
+        Verdict::Bad
+    } else if state.avg_starvation_rate > 3.0 || acres_per_person < 10 {
         let assassins = state.assassins_roll();
-        println!("YOUR PERFORMANCE COULD HAVE BEEN SOMEWHAT BETTER, BUT");
-        println!("REALLY WASN'T TOO BAD AT ALL. {assassins} PEOPLE");
-        println!("WOULD DEARLY LIKE TO SEE YOU ASSASSINATED BUT WE ALL HAVE OUR");
-        println!("TRIVIAL PROBLEMS.");
+        Verdict::Mediocre(assassins)
     } else {
-        // Best outcome (lines 900-905)
-        println!("A FANTASTIC PERFORMANCE!!!  CHARLEMAGNE, DISRAELI, AND");
-        println!("JEFFERSON COMBINED COULD NOT HAVE DONE BETTER!");
-    }
+        Verdict::Best
+    };
+    ui.end_of_term_eval(&state, acres_per_person, verdict);
     ui.farewell();
     Ok(())
 }
