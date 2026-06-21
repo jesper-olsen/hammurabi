@@ -29,37 +29,44 @@ pub enum Verdict {
     Best,
 }
 
-pub trait GameUi {
-    fn intro(&mut self) -> io::Result<()>;
-    fn ask(&mut self, prompt: &str) -> io::Result<PlayerInput>;
-    fn render_report(&mut self, state: &State) -> io::Result<()>;
-    fn not_enough_grain(&mut self, amount: u32) -> io::Result<()>;
-    fn not_enough_acres(&mut self, amount: u32) -> io::Result<()>;
-    fn not_enough_workers(&mut self, population: u32) -> io::Result<()>;
-    fn report_land_price(&mut self, price: u32) -> io::Result<()>;
-    fn impeach(&mut self, deaths: u32, per_year: bool) -> io::Result<()>;
-    fn quit_game(&mut self) -> io::Result<()>;
-    fn end_of_term_eval(
-        &mut self,
-        state: &State,
+pub enum UiMessage {
+    Intro,
+    Report(State),
+    LandPrice(u32),
+    NotEnoughGrain(u32),
+    NotEnoughAcres(u32),
+    NotEnoughWorkers(u32),
+    Impeach {
+        deaths: u32,
+        per_year: bool,
+    },
+    EndOfTerm {
+        state: State,
         acres_per_person: u32,
         verdict: Verdict,
-    ) -> io::Result<()>;
-    fn farewell(&mut self) -> io::Result<()>;
+    },
+    Quit,
+    Farewell,
 }
 
+pub trait GameUi {
+    fn ask(&mut self, prompt: &str) -> io::Result<PlayerInput>;
+    fn show(&mut self, message: UiMessage) -> io::Result<()>;
+}
+
+#[derive(Clone)]
 pub struct State {
     pub total_deaths: u32,        // cumulative deaths
     pub avg_starvation_rate: f64, // running average % starved per year
-    year: u32,                    // year counter
-    population: u32,
-    grain: u32,          // bushels in store
-    rats_ate: u32,       // rats ate  (H-S = 3000-2800)
-    yield_per_acre: u32, // bushels harvested per acre
-    acres: u32,          // acres owned  (H/Y = 3000/3)
-    immigrants: u32,     // immigrants last year
-    plague: bool,
-    starved: u32, // people who starved last year (shown in report)
+    pub year: u32,                // year counter
+    pub population: u32,
+    pub grain: u32,          // bushels in store
+    pub rats_ate: u32,       // rats ate  (H-S = 3000-2800)
+    pub yield_per_acre: u32, // bushels harvested per acre
+    pub acres: u32,          // acres owned  (H/Y = 3000/3)
+    pub immigrants: u32,     // immigrants last year
+    pub plague: bool,
+    pub starved: u32, // people who starved last year (shown in report)
     rng: rand::rngs::ThreadRng,
 }
 
@@ -224,12 +231,12 @@ impl State {
 
 pub fn run_game<U: GameUi>(ui: &mut U) -> io::Result<()> {
     let mut state = State::new();
-    ui.intro()?;
+    ui.show(UiMessage::Intro)?;
 
     // ── Year loop ────────────────────────────────────────────────────────────
     loop {
         state.start_year();
-        ui.render_report(&state)?;
+        ui.show(UiMessage::Report(state.clone()))?;
 
         // End of 10-year term (line 270)
         if state.year > MAX_YEARS {
@@ -238,15 +245,18 @@ pub fn run_game<U: GameUi>(ui: &mut U) -> io::Result<()> {
 
         // ── Land price (lines 310-312) ────────────────────────────────────────
         let price = state.roll_land_price();
-        ui.report_land_price(price)?;
+        ui.show(UiMessage::LandPrice(price))?;
 
         // ── Buy acres (lines 320-334) ─────────────────────────────────────────
         let buy: u32 = loop {
             match ui.ask("HOW MANY ACRES DO YOU WISH TO BUY? ")? {
-                PlayerInput::Quit => return ui.quit_game(),
+                PlayerInput::Quit => {
+                    ui.show(UiMessage::Quit)?;
+                    return ui.show(UiMessage::Farewell);
+                }
                 PlayerInput::Amount(n) => match state.buy_land(n, price) {
                     Ok(()) => break n,
-                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain)?,
+                    Err(NotEnough::Grain) => ui.show(UiMessage::NotEnoughGrain(state.grain))?,
                     _ => unreachable!(),
                 },
             }
@@ -256,10 +266,13 @@ pub fn run_game<U: GameUi>(ui: &mut U) -> io::Result<()> {
         if buy == 0 {
             loop {
                 match ui.ask("HOW MANY ACRES DO YOU WISH TO SELL? ")? {
-                    PlayerInput::Quit => return ui.quit_game(),
+                    PlayerInput::Quit => {
+                        ui.show(UiMessage::Quit)?;
+                        return ui.show(UiMessage::Farewell);
+                    }
                     PlayerInput::Amount(n) => match state.sell_land(n, price) {
                         Ok(()) => break,
-                        Err(NotEnough::Acres) => ui.not_enough_acres(state.acres)?,
+                        Err(NotEnough::Acres) => ui.show(UiMessage::NotEnoughAcres(state.acres))?,
                         _ => unreachable!(),
                     },
                 }
@@ -269,10 +282,13 @@ pub fn run_game<U: GameUi>(ui: &mut U) -> io::Result<()> {
         // ── Feed people (lines 410-430) ───────────────────────────────────────
         let food: u32 = loop {
             match ui.ask("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ")? {
-                PlayerInput::Quit => return ui.quit_game(),
+                PlayerInput::Quit => {
+                    ui.show(UiMessage::Quit)?;
+                    return ui.show(UiMessage::Farewell);
+                }
                 PlayerInput::Amount(n) => match state.allocate_food(n) {
                     Ok(()) => break n,
-                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain)?,
+                    Err(NotEnough::Grain) => ui.show(UiMessage::NotEnoughGrain(state.grain))?,
                     _ => unreachable!(),
                 },
             }
@@ -281,12 +297,17 @@ pub fn run_game<U: GameUi>(ui: &mut U) -> io::Result<()> {
         // ── Plant seed (lines 440-510) ────────────────────────────────────────
         let planted: u32 = loop {
             match ui.ask("HOW MANY ACRES DO YOU WISH TO PLANT WITH SEED? ")? {
-                PlayerInput::Quit => return ui.quit_game(),
+                PlayerInput::Quit => {
+                    ui.show(UiMessage::Quit)?;
+                    return ui.show(UiMessage::Farewell);
+                }
                 PlayerInput::Amount(n) => match state.plant_seed(n) {
                     Ok(()) => break n,
-                    Err(NotEnough::Acres) => ui.not_enough_acres(state.acres)?,
-                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain)?,
-                    Err(NotEnough::Workers) => ui.not_enough_workers(state.population)?,
+                    Err(NotEnough::Acres) => ui.show(UiMessage::NotEnoughAcres(state.acres))?,
+                    Err(NotEnough::Grain) => ui.show(UiMessage::NotEnoughGrain(state.grain))?,
+                    Err(NotEnough::Workers) => {
+                        ui.show(UiMessage::NotEnoughWorkers(state.population))?
+                    }
                 },
             }
         };
@@ -294,9 +315,11 @@ pub fn run_game<U: GameUi>(ui: &mut U) -> io::Result<()> {
         match state.end_year(food, planted) {
             YearOutcome::Continue => {}
             YearOutcome::Impeached => {
-                ui.impeach(state.starved, true)?;
-                ui.farewell()?;
-                return Ok(());
+                ui.show(UiMessage::Impeach {
+                    deaths: state.starved,
+                    per_year: true,
+                })?;
+                return ui.show(UiMessage::Farewell);
             }
         }
     }
@@ -313,6 +336,10 @@ pub fn run_game<U: GameUi>(ui: &mut U) -> io::Result<()> {
     } else {
         Verdict::Best
     };
-    ui.end_of_term_eval(&state, acres_per_person, verdict)?;
-    ui.farewell()
+    ui.show(UiMessage::EndOfTerm {
+        state: state.clone(),
+        acres_per_person,
+        verdict,
+    })?;
+    ui.show(UiMessage::Farewell)
 }
