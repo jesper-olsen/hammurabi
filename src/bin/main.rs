@@ -1,4 +1,5 @@
 use rand::RngExt;
+use std::fmt;
 use std::io::{self, Write};
 
 const MAX_YEARS: u32 = 10;
@@ -100,6 +101,28 @@ struct State {
     rng: rand::rngs::ThreadRng,
 }
 
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // ── Annual report (lines 215-260) ────────────────────────────────────
+        writeln!(f, "\n\nHAMURABI:  I BEG TO REPORT TO YOU,")?;
+        writeln!(
+            f,
+            "IN YEAR {}, {} PEOPLE STARVED, {} CAME TO THE CITY,",
+            self.year, self.starved, self.immigrants
+        )?;
+        // Plague (lines 227-229)
+        if self.plague {
+            writeln!(f, "A HORRIBLE PLAGUE STRUCK!  HALF THE PEOPLE DIED.")?;
+        }
+        writeln!(f, "POPULATION IS NOW {}", self.population)?;
+        writeln!(f, "THE CITY NOW OWNS  {} ACRES.", self.acres)?;
+        writeln!(f, "YOU HARVESTED {} BUSHELS PER ACRE.", self.yield_per_acre)?;
+        writeln!(f, "THE RATS ATE {} BUSHELS.", self.rats_ate)?;
+        writeln!(f, "YOU NOW HAVE {} BUSHELS IN STORE.", self.grain)?;
+        writeln!(f)
+    }
+}
+
 impl State {
     fn new() -> Self {
         // (lines 95-110)
@@ -160,6 +183,7 @@ impl State {
             Err(NotEnough::Workers)
         } else {
             // plant 2 acres with one bushel... original used integer division,
+            // which means you can get free seed, e.g. plant 1 acre, cost is 0...
             //let seed_cost = planted.div_ceil(2);
             self.grain -= seed_cost;
             Ok(())
@@ -219,6 +243,20 @@ impl State {
         }
         YearOutcome::Continue
     }
+
+    fn roll_land_price(&mut self) -> u32 {
+        self.rng.random_range(17..=26)
+    }
+
+    fn assassins_roll(&mut self) -> u32 {
+        let max = (0.8 * self.population as f64) as u32;
+        if max > 0 {
+            self.rng.random_range(0..max)
+        } else {
+            0
+        }
+    }
+
 }
 
 fn intro() {
@@ -233,29 +271,6 @@ fn intro() {
     println!();
 }
 
-fn annual_report(state: &State) {
-    // ── Annual report (lines 215-260) ────────────────────────────────────
-    println!();
-    println!();
-    println!("HAMURABI:  I BEG TO REPORT TO YOU,");
-    println!(
-        "IN YEAR {}, {} PEOPLE STARVED, {} CAME TO THE CITY,",
-        state.year, state.starved, state.immigrants
-    );
-
-    // Plague (lines 227-229): q ≤ 0 means plague struck
-    if state.plague {
-        println!("A HORRIBLE PLAGUE STRUCK!  HALF THE PEOPLE DIED.");
-    }
-
-    println!("POPULATION IS NOW {}", state.population);
-    println!("THE CITY NOW OWNS  {} ACRES.", state.acres);
-    println!("YOU HARVESTED {} BUSHELS PER ACRE.", state.yield_per_acre);
-    println!("THE RATS ATE {} BUSHELS.", state.rats_ate);
-    println!("YOU NOW HAVE {} BUSHELS IN STORE.", state.grain);
-    println!();
-}
-
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() -> io::Result<()> {
@@ -267,7 +282,7 @@ fn main() -> io::Result<()> {
     loop {
         state.start_year();
 
-        annual_report(&state);
+        print!("{state}"); // annual report
 
         // End of 10-year term (line 270)
         if state.year > MAX_YEARS {
@@ -275,7 +290,7 @@ fn main() -> io::Result<()> {
         }
 
         // ── Land price (lines 310-312) ────────────────────────────────────────
-        let price = state.rng.random_range(17..=26);
+        let price = state.roll_land_price();
         println!("LAND IS TRADING AT {} BUSHELS PER ACRE.", price);
 
         // ── Buy acres (lines 320-334) ─────────────────────────────────────────
@@ -366,12 +381,7 @@ fn main() -> io::Result<()> {
         println!("FRANKLY, HATE YOUR GUTS!!");
     } else if state.avg_starvation_rate > 3.0 || l < 10 {
         // Mediocre outcome (lines 895-896 → 960)
-        let max = (0.8 * state.population as f64) as u32;
-        let assassins = if max > 0 {
-            state.rng.random_range(0..max)
-        } else {
-            0
-        };
+        let assassins = state.assassins_roll();
         println!("YOUR PERFORMANCE COULD HAVE BEEN SOMEWHAT BETTER, BUT");
         println!("REALLY WASN'T TOO BAD AT ALL. {assassins} PEOPLE");
         println!("WOULD DEARLY LIKE TO SEE YOU ASSASSINATED BUT WE ALL HAVE OUR");
