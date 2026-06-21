@@ -6,7 +6,7 @@ const MAX_YEARS: u32 = 10;
 const ACRES_PER_PERSON: u32 = 10;
 const BUSHELS_PER_PERSON: u32 = 20;
 
-enum PlayerInput {
+pub enum PlayerInput {
     Amount(u32),
     Quit,
 }
@@ -22,17 +22,49 @@ enum NotEnough {
     Workers,
 }
 
-enum Verdict {
+pub enum Verdict {
     Worst,
     Bad,
     Mediocre(u32),
     Best,
 }
 
+pub trait GameUi {
+    fn intro(&mut self) -> io::Result<()>;
+    fn ask(&mut self, prompt: &str) -> io::Result<PlayerInput>;
+    fn render_report(&mut self, state: &State) -> io::Result<()>;
+    fn not_enough_grain(&mut self, amount: u32) -> io::Result<()>;
+    fn not_enough_acres(&mut self, amount: u32) -> io::Result<()>;
+    fn not_enough_workers(&mut self, population: u32) -> io::Result<()>;
+    fn report_land_price(&mut self, price: u32) -> io::Result<()>;
+    fn impeach(&mut self, deaths: u32, per_year: bool) -> io::Result<()>;
+    fn quit_game(&mut self) -> io::Result<()>;
+    fn end_of_term_eval(
+        &mut self,
+        state: &State,
+        acres_per_person: u32,
+        verdict: Verdict,
+    ) -> io::Result<()>;
+    fn farewell(&mut self) -> io::Result<()>;
+}
+
 struct Cli;
 
-impl Cli {
-    fn ask(&self, prompt: &str) -> io::Result<PlayerInput> {
+impl GameUi for Cli {
+    fn intro(&mut self) -> io::Result<()> {
+        // ── Title (lines 10-90) ──────────────────────────────────────────────────
+        println!("{:>40}", "HAMURABI");
+        println!("{:>51}", "CREATIVE COMPUTING  MORRISTOWN, NEW JERSEY");
+        println!();
+        println!();
+        println!();
+        println!("TRY YOUR HAND AT GOVERNING ANCIENT SUMERIA");
+        println!("FOR A TEN-YEAR TERM OF OFFICE.");
+        println!();
+        Ok(())
+    }
+
+    fn ask(&mut self, prompt: &str) -> io::Result<PlayerInput> {
         let mut line = String::new();
         loop {
             print!("{prompt}");
@@ -53,30 +85,35 @@ impl Cli {
         }
     }
 
-    fn intro(&self) {
-        // ── Title (lines 10-90) ──────────────────────────────────────────────────
-        println!("{:>40}", "HAMURABI");
-        println!("{:>51}", "CREATIVE COMPUTING  MORRISTOWN, NEW JERSEY");
-        println!();
-        println!();
-        println!();
-        println!("TRY YOUR HAND AT GOVERNING ANCIENT SUMERIA");
-        println!("FOR A TEN-YEAR TERM OF OFFICE.");
-        println!();
+    fn render_report(&mut self, state: &State) -> io::Result<()> {
+        print!("{state}");
+        Ok(())
     }
 
-    fn not_enough_grain(&self, s: u32) {
+    fn not_enough_grain(&mut self, s: u32) -> io::Result<()> {
         println!("HAMURABI:  THINK AGAIN.  YOU HAVE ONLY");
         println!("{s} BUSHELS OF GRAIN.  NOW THEN,");
+        Ok(())
     }
 
-    fn not_enough_acres(&self, a: u32) {
+    fn not_enough_acres(&mut self, a: u32) -> io::Result<()> {
         println!("HAMURABI:  THINK AGAIN.  YOU OWN ONLY {a} ACRES.  NOW THEN,");
+        Ok(())
+    }
+
+    fn report_land_price(&mut self, price: u32) -> io::Result<()> {
+        println!("LAND IS TRADING AT {price} BUSHELS PER ACRE.");
+        Ok(())
+    }
+
+    fn not_enough_workers(&mut self, population: u32) -> io::Result<()> {
+        println!("BUT YOU HAVE ONLY {population} PEOPLE TO TEND THE FIELDS!  NOW THEN,");
+        Ok(())
     }
 
     // ── Endings ──────────────────────────────────────────────────────────────────
 
-    fn farewell(&self) {
+    fn farewell(&mut self) -> io::Result<()> {
         println!();
         // CHR$(7) × 10 — terminal bell
         for _ in 0..10 {
@@ -85,10 +122,11 @@ impl Cli {
         io::stdout().flush().unwrap();
         println!("SO LONG FOR NOW.");
         println!();
+        Ok(())
     }
 
     /// Instant impeachment (lines 560-567 / 850-857).
-    fn impeach(&self, d: u32, per_year: bool) {
+    fn impeach(&mut self, d: u32, per_year: bool) -> io::Result<()> {
         println!();
         if per_year {
             println!("YOU STARVED {} PEOPLE IN ONE YEAR!!!", d);
@@ -96,18 +134,23 @@ impl Cli {
         println!("DUE TO THIS EXTREME MISMANAGEMENT YOU HAVE NOT ONLY");
         println!("BEEN IMPEACHED AND THROWN OUT OF OFFICE BUT YOU HAVE");
         println!("ALSO BEEN DECLARED NATIONAL FINK!!!!");
-    }
-
-    /// Quit at the player's own request (line 850).
-    fn quit_game(&self) -> io::Result<()> {
-        println!();
-        println!("\nHAMURABI:  I CANNOT DO WHAT YOU WISH.");
-        println!("GET YOURSELF ANOTHER STEWARD!!!!!");
-        self.farewell();
         Ok(())
     }
 
-    fn end_of_term_eval(&self, state: &State, acres_per_person: u32, verdict: Verdict) {
+    /// Quit at the player's own request (line 850).
+    fn quit_game(&mut self) -> io::Result<()> {
+        println!();
+        println!("\nHAMURABI:  I CANNOT DO WHAT YOU WISH.");
+        println!("GET YOURSELF ANOTHER STEWARD!!!!!");
+        self.farewell()
+    }
+
+    fn end_of_term_eval(
+        &mut self,
+        state: &State,
+        acres_per_person: u32,
+        verdict: Verdict,
+    ) -> io::Result<()> {
         println!(
             "IN YOUR {MAX_YEARS}-YEAR TERM OF OFFICE, {:.2} PERCENT OF THE",
             state.avg_starvation_rate
@@ -119,7 +162,7 @@ impl Cli {
         println!();
 
         match verdict {
-            Verdict::Worst => self.impeach(0, false),
+            Verdict::Worst => self.impeach(0, false)?,
             Verdict::Bad => {
                 println!("YOUR HEAVY-HANDED PERFORMANCE SMACKS OF NERO AND IVAN IV.");
                 println!("THE PEOPLE (REMAINING) FIND YOU AN UNPLEASANT RULER, AND,");
@@ -136,10 +179,11 @@ impl Cli {
                 println!("JEFFERSON COMBINED COULD NOT HAVE DONE BETTER!");
             }
         }
+        Ok(())
     }
 }
 
-struct State {
+pub struct State {
     total_deaths: u32,        // cumulative deaths
     avg_starvation_rate: f64, // running average % starved per year
     year: u32,                // year counter
@@ -311,20 +355,16 @@ impl State {
     }
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+// -- main game loop --------------------------------------------------------
 
-fn main() -> io::Result<()> {
-    let ui = Cli;
-
-    ui.intro();
-
+fn run_game<U: GameUi>(ui: &mut U) -> io::Result<()> {
     let mut state = State::new();
+    ui.intro()?;
 
     // ── Year loop ────────────────────────────────────────────────────────────
     loop {
         state.start_year();
-
-        print!("{state}"); // annual report
+        ui.render_report(&state)?;
 
         // End of 10-year term (line 270)
         if state.year > MAX_YEARS {
@@ -333,7 +373,7 @@ fn main() -> io::Result<()> {
 
         // ── Land price (lines 310-312) ────────────────────────────────────────
         let price = state.roll_land_price();
-        println!("LAND IS TRADING AT {} BUSHELS PER ACRE.", price);
+        ui.report_land_price(price)?;
 
         // ── Buy acres (lines 320-334) ─────────────────────────────────────────
         let buy: u32 = loop {
@@ -341,7 +381,7 @@ fn main() -> io::Result<()> {
                 PlayerInput::Quit => return ui.quit_game(),
                 PlayerInput::Amount(n) => match state.buy_land(n, price) {
                     Ok(()) => break n,
-                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain),
+                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain)?,
                     _ => unreachable!(),
                 },
             }
@@ -354,7 +394,7 @@ fn main() -> io::Result<()> {
                     PlayerInput::Quit => return ui.quit_game(),
                     PlayerInput::Amount(n) => match state.sell_land(n, price) {
                         Ok(()) => break,
-                        Err(NotEnough::Acres) => ui.not_enough_acres(state.acres),
+                        Err(NotEnough::Acres) => ui.not_enough_acres(state.acres)?,
                         _ => unreachable!(),
                     },
                 }
@@ -362,18 +402,16 @@ fn main() -> io::Result<()> {
         };
 
         // ── Feed people (lines 410-430) ───────────────────────────────────────
-        println!();
         let food: u32 = loop {
             match ui.ask("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ")? {
                 PlayerInput::Quit => return ui.quit_game(),
                 PlayerInput::Amount(n) => match state.allocate_food(n) {
                     Ok(()) => break n,
-                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain),
+                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain)?,
                     _ => unreachable!(),
                 },
             }
         };
-        println!();
 
         // ── Plant seed (lines 440-510) ────────────────────────────────────────
         let planted: u32 = loop {
@@ -381,12 +419,9 @@ fn main() -> io::Result<()> {
                 PlayerInput::Quit => return ui.quit_game(),
                 PlayerInput::Amount(n) => match state.plant_seed(n) {
                     Ok(()) => break n,
-                    Err(NotEnough::Acres) => ui.not_enough_acres(state.acres),
-                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain),
-                    Err(NotEnough::Workers) => println!(
-                        "BUT YOU HAVE ONLY {} PEOPLE TO TEND THE FIELDS!  NOW THEN,",
-                        state.population
-                    ),
+                    Err(NotEnough::Acres) => ui.not_enough_acres(state.acres)?,
+                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain)?,
+                    Err(NotEnough::Workers) => ui.not_enough_workers(state.population)?,
                 },
             }
         };
@@ -394,8 +429,8 @@ fn main() -> io::Result<()> {
         match state.end_year(food, planted) {
             YearOutcome::Continue => {}
             YearOutcome::Impeached => {
-                ui.impeach(state.starved, true);
-                ui.farewell();
+                ui.impeach(state.starved, true)?;
+                ui.farewell()?;
                 return Ok(());
             }
         }
@@ -413,7 +448,11 @@ fn main() -> io::Result<()> {
     } else {
         Verdict::Best
     };
-    ui.end_of_term_eval(&state, acres_per_person, verdict);
-    ui.farewell();
-    Ok(())
+    ui.end_of_term_eval(&state, acres_per_person, verdict)?;
+    ui.farewell()
+}
+
+fn main() -> io::Result<()> {
+    let mut ui = Cli;
+    run_game(&mut ui)
 }
