@@ -22,68 +22,82 @@ enum NotEnough {
     Workers,
 }
 
-// ── I/O helpers ──────────────────────────────────────────────────────────────
+struct Cli;
 
-fn read_input(prompt: &str) -> io::Result<PlayerInput> {
-    loop {
-        print!("{prompt}");
-        io::stdout().flush()?;
+impl Cli {
+    fn read_input(&self, prompt: &str) -> io::Result<PlayerInput> {
+        loop {
+            print!("{prompt}");
+            io::stdout().flush()?;
 
-        let mut line = String::new();
-        if io::stdin().read_line(&mut line)? == 0 {
-            return Ok(PlayerInput::Quit); // Handle EOF gracefully
-        }
-
-        if let Ok(n) = line.trim().parse::<i64>() {
-            if n < 0 {
-                return Ok(PlayerInput::Quit);
+            let mut line = String::new();
+            if io::stdin().read_line(&mut line)? == 0 {
+                return Ok(PlayerInput::Quit); // Handle EOF gracefully
             }
-            return Ok(PlayerInput::Amount(n as u32));
+
+            if let Ok(n) = line.trim().parse::<i64>() {
+                if n < 0 {
+                    return Ok(PlayerInput::Quit);
+                }
+                return Ok(PlayerInput::Amount(n as u32));
+            }
+            println!("PLEASE ENTER A WHOLE NUMBER.");
         }
-        println!("PLEASE ENTER A WHOLE NUMBER.");
     }
-}
 
-fn not_enough_grain(s: u32) {
-    println!("HAMURABI:  THINK AGAIN.  YOU HAVE ONLY");
-    println!("{s} BUSHELS OF GRAIN.  NOW THEN,");
-}
-
-fn not_enough_acres(a: u32) {
-    println!("HAMURABI:  THINK AGAIN.  YOU OWN ONLY {a} ACRES.  NOW THEN,");
-}
-
-// ── Endings ──────────────────────────────────────────────────────────────────
-
-fn farewell() {
-    println!();
-    // CHR$(7) × 10 — terminal bell
-    for _ in 0..10 {
-        print!("\x07");
+    fn intro(&self) {
+        // ── Title (lines 10-90) ──────────────────────────────────────────────────
+        println!("{:>40}", "HAMURABI");
+        println!("{:>51}", "CREATIVE COMPUTING  MORRISTOWN, NEW JERSEY");
+        println!();
+        println!();
+        println!();
+        println!("TRY YOUR HAND AT GOVERNING ANCIENT SUMERIA");
+        println!("FOR A TEN-YEAR TERM OF OFFICE.");
+        println!();
     }
-    io::stdout().flush().unwrap();
-    println!("SO LONG FOR NOW.");
-    println!();
-}
 
-/// Instant impeachment (lines 560-567 / 850-857).
-fn impeach(d: u32, per_year: bool) {
-    println!();
-    if per_year {
-        println!("YOU STARVED {} PEOPLE IN ONE YEAR!!!", d);
+    fn not_enough_grain(&self, s: u32) {
+        println!("HAMURABI:  THINK AGAIN.  YOU HAVE ONLY");
+        println!("{s} BUSHELS OF GRAIN.  NOW THEN,");
     }
-    println!("DUE TO THIS EXTREME MISMANAGEMENT YOU HAVE NOT ONLY");
-    println!("BEEN IMPEACHED AND THROWN OUT OF OFFICE BUT YOU HAVE");
-    println!("ALSO BEEN DECLARED NATIONAL FINK!!!!");
-}
 
-/// Quit at the player's own request (line 850).
-fn quit_game() -> io::Result<()> {
-    println!();
-    println!("\nHAMURABI:  I CANNOT DO WHAT YOU WISH.");
-    println!("GET YOURSELF ANOTHER STEWARD!!!!!");
-    farewell();
-    Ok(())
+    fn not_enough_acres(&self, a: u32) {
+        println!("HAMURABI:  THINK AGAIN.  YOU OWN ONLY {a} ACRES.  NOW THEN,");
+    }
+
+    // ── Endings ──────────────────────────────────────────────────────────────────
+
+    fn farewell(&self) {
+        println!();
+        // CHR$(7) × 10 — terminal bell
+        for _ in 0..10 {
+            print!("\x07");
+        }
+        io::stdout().flush().unwrap();
+        println!("SO LONG FOR NOW.");
+        println!();
+    }
+
+    /// Instant impeachment (lines 560-567 / 850-857).
+    fn impeach(&self, d: u32, per_year: bool) {
+        println!();
+        if per_year {
+            println!("YOU STARVED {} PEOPLE IN ONE YEAR!!!", d);
+        }
+        println!("DUE TO THIS EXTREME MISMANAGEMENT YOU HAVE NOT ONLY");
+        println!("BEEN IMPEACHED AND THROWN OUT OF OFFICE BUT YOU HAVE");
+        println!("ALSO BEEN DECLARED NATIONAL FINK!!!!");
+    }
+
+    /// Quit at the player's own request (line 850).
+    fn quit_game(&self) -> io::Result<()> {
+        println!();
+        println!("\nHAMURABI:  I CANNOT DO WHAT YOU WISH.");
+        println!("GET YOURSELF ANOTHER STEWARD!!!!!");
+        self.farewell();
+        Ok(())
+    }
 }
 
 struct State {
@@ -256,25 +270,14 @@ impl State {
             0
         }
     }
-
-}
-
-fn intro() {
-    // ── Title (lines 10-90) ──────────────────────────────────────────────────
-    println!("{:>40}", "HAMURABI");
-    println!("{:>51}", "CREATIVE COMPUTING  MORRISTOWN, NEW JERSEY");
-    println!();
-    println!();
-    println!();
-    println!("TRY YOUR HAND AT GOVERNING ANCIENT SUMERIA");
-    println!("FOR A TEN-YEAR TERM OF OFFICE.");
-    println!();
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() -> io::Result<()> {
-    intro();
+    let ui = Cli;
+
+    ui.intro();
 
     let mut state = State::new();
 
@@ -295,11 +298,11 @@ fn main() -> io::Result<()> {
 
         // ── Buy acres (lines 320-334) ─────────────────────────────────────────
         let buy: u32 = loop {
-            match read_input("HOW MANY ACRES DO YOU WISH TO BUY? ")? {
-                PlayerInput::Quit => return quit_game(),
+            match ui.read_input("HOW MANY ACRES DO YOU WISH TO BUY? ")? {
+                PlayerInput::Quit => return ui.quit_game(),
                 PlayerInput::Amount(n) => match state.buy_land(n, price) {
                     Ok(()) => break n,
-                    Err(NotEnough::Grain) => not_enough_grain(state.grain),
+                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain),
                     _ => unreachable!(),
                 },
             }
@@ -308,11 +311,11 @@ fn main() -> io::Result<()> {
         // ── Sell acres (lines 340-350) — only if nothing bought ──────────────
         if buy == 0 {
             loop {
-                match read_input("HOW MANY ACRES DO YOU WISH TO SELL? ")? {
-                    PlayerInput::Quit => return quit_game(),
+                match ui.read_input("HOW MANY ACRES DO YOU WISH TO SELL? ")? {
+                    PlayerInput::Quit => return ui.quit_game(),
                     PlayerInput::Amount(n) => match state.sell_land(n, price) {
                         Ok(()) => break,
-                        Err(NotEnough::Acres) => not_enough_acres(state.acres),
+                        Err(NotEnough::Acres) => ui.not_enough_acres(state.acres),
                         _ => unreachable!(),
                     },
                 }
@@ -322,11 +325,11 @@ fn main() -> io::Result<()> {
         // ── Feed people (lines 410-430) ───────────────────────────────────────
         println!();
         let food: u32 = loop {
-            match read_input("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ")? {
-                PlayerInput::Quit => return quit_game(),
+            match ui.read_input("HOW MANY BUSHELS DO YOU WISH TO FEED YOUR PEOPLE? ")? {
+                PlayerInput::Quit => return ui.quit_game(),
                 PlayerInput::Amount(n) => match state.allocate_food(n) {
                     Ok(()) => break n,
-                    Err(NotEnough::Grain) => not_enough_grain(state.grain),
+                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain),
                     _ => unreachable!(),
                 },
             }
@@ -335,12 +338,12 @@ fn main() -> io::Result<()> {
 
         // ── Plant seed (lines 440-510) ────────────────────────────────────────
         let planted: u32 = loop {
-            match read_input("HOW MANY ACRES DO YOU WISH TO PLANT WITH SEED? ")? {
-                PlayerInput::Quit => return quit_game(),
+            match ui.read_input("HOW MANY ACRES DO YOU WISH TO PLANT WITH SEED? ")? {
+                PlayerInput::Quit => return ui.quit_game(),
                 PlayerInput::Amount(n) => match state.plant_seed(n) {
                     Ok(()) => break n,
-                    Err(NotEnough::Acres) => not_enough_acres(state.acres),
-                    Err(NotEnough::Grain) => not_enough_grain(state.grain),
+                    Err(NotEnough::Acres) => ui.not_enough_acres(state.acres),
+                    Err(NotEnough::Grain) => ui.not_enough_grain(state.grain),
                     Err(NotEnough::Workers) => println!(
                         "BUT YOU HAVE ONLY {} PEOPLE TO TEND THE FIELDS!  NOW THEN,",
                         state.population
@@ -352,8 +355,8 @@ fn main() -> io::Result<()> {
         match state.end_year(food, planted) {
             YearOutcome::Continue => {}
             YearOutcome::Impeached => {
-                impeach(state.starved, true);
-                farewell();
+                ui.impeach(state.starved, true);
+                ui.farewell();
                 return Ok(());
             }
         }
@@ -373,7 +376,7 @@ fn main() -> io::Result<()> {
 
     if state.avg_starvation_rate > 33.0 || l < 7 {
         // Worst outcome: fink (lines 880-885 → 565)
-        impeach(0, false);
+        ui.impeach(0, false);
     } else if state.avg_starvation_rate > 10.0 || l < 9 {
         // Bad outcome (lines 890-892 → 940)
         println!("YOUR HEAVY-HANDED PERFORMANCE SMACKS OF NERO AND IVAN IV.");
@@ -391,6 +394,6 @@ fn main() -> io::Result<()> {
         println!("A FANTASTIC PERFORMANCE!!!  CHARLEMAGNE, DISRAELI, AND");
         println!("JEFFERSON COMBINED COULD NOT HAVE DONE BETTER!");
     }
-    farewell();
+    ui.farewell();
     Ok(())
 }
