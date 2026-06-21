@@ -3,6 +3,10 @@ use std::io::{self, Write};
 
 struct Cli;
 
+fn clear_screen() {
+    print!("\x1B[2J\x1B[H");
+}
+
 fn impeach(deaths: u32, per_year: bool) {
     println!();
     if per_year {
@@ -27,7 +31,10 @@ impl GameUi for Cli {
                 println!("FOR A TEN-YEAR TERM OF OFFICE.");
                 println!();
             }
-            UiMessage::Report(state) => print!("{state}"),
+            UiMessage::Report(state) => {
+                clear_screen();
+                print!("{state}");
+            }
             UiMessage::LandPrice(n) => println!("LAND IS TRADING AT {n} BUSHELS PER ACRE."),
             UiMessage::NotEnoughGrain(n) => {
                 println!("HAMURABI:  THINK AGAIN.  YOU HAVE ONLY");

@@ -1,6 +1,6 @@
 # Hammurabi (Rust CLI)
 
-A modern, command-line implementation of the classic 1968 resource management game, *Hammurabi* [1], written in Rust. Original BASIC [source](hammurabi.bas).
+A modern, command-line implementation of the classic [1968 resource management game](hammurabi.bas), *Hammurabi* [1], written in Rust. 
 
 The goal is to manage a city's resources over a 10-year term by balancing land trading, agriculture, and feeding the population. The rules are simple but not made explicit - challenge is to figure them out.
 
